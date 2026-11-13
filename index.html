@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>The Grand Library</title>
+  <meta name="description" content="A private library of books, papers, studies and thoughts, arranged in rooms and collections.">
+  <meta name="theme-color" content="#1a120c">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Library">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/hall.css">
+  <link rel="stylesheet" href="css/room.css">
+  <link rel="stylesheet" href="css/panels.css">
+  <link rel="stylesheet" href="css/reader.css">
+  <script src="config.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#view">Skip to the library</a>
+  <div id="app" class="app">
+    <main id="view" class="view" tabindex="-1">
+      <div class="boot">
+        <svg class="boot-mark" viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M5 21V10a7 7 0 0 1 14 0v11"/><path d="M3 21h18"/><path d="M9 21v-7h6v7"/></svg>
+        <p>Lighting the lamps…</p>
+      </div>
+    </main>
+  </div>
+  <div id="layer-drawer"></div>
+  <div id="layer-reader"></div>
+  <div id="layer-modal"></div>
+  <div id="layer-toast" aria-live="polite"></div>
+  <noscript><p class="noscript">The Grand Library needs JavaScript to open its doors.</p></noscript>
+</body>
+</html>
