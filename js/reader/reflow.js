@@ -11,7 +11,7 @@ import { loadPdfjs } from '../deps.js';
 import { openPdf } from '../import/pdf.js';
 import { looseRegex } from '../util.js';
 
-export const REFLOW_VERSION = 1;
+export const REFLOW_VERSION = 2;
 const building = new Map();
 
 export async function cachedReflow(docId) {

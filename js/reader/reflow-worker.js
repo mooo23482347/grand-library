@@ -87,7 +87,7 @@ function analyse({ outline = [], pages: count }) {
 
   let totalChars = 0;
   for (const p of pages) for (const l of p.lines) totalChars += l.text.length;
-  if (totalChars < Math.max(200, count * 80)) return { v: 1, status: 'notext', pages: count, chars: totalChars, chapters: [] };
+  if (totalChars < Math.max(200, count * 80)) return { v: 2, status: 'notext', pages: count, chars: totalChars, chapters: [] };
 
   removeRunningHeads(pages);
   for (const p of pages) orderColumns(p);
@@ -116,7 +116,9 @@ function analyse({ outline = [], pages: count }) {
   };
 
   // ---------------- blocks
+  const VERSION = 2; // keep in step with REFLOW_VERSION in reflow.js
   const blocks = [];
+  let expectTitle = false; // the line after "Fünftes Kapitel" is usually the chapter's name
   const notes = [];
   let cur = null;
   let prev = null;
@@ -147,21 +149,46 @@ function analyse({ outline = [], pages: count }) {
       const big = l.size >= body * 1.18 && l.text.length < 160;
       const caps = l.text.length >= 4 && l.text.length <= 70 && /[A-ZÄÖÜ]{3}/.test(l.text) && l.text === l.text.toUpperCase() && gapAbove > lineGap * 1.5 && gapBelow > lineGap * 1.2;
       const centered = Math.abs((l.x + l.x2) / 2 - (m.left + m.right) / 2) < (m.right - m.left) * 0.12 && l.x2 - l.x < (m.right - m.left) * 0.8;
-      // Section headings set in the body size: numbered ("2.1 Method") or a short line standing alone.
+      // Section headings set in the body size: numbered ("2.1 Method", "1. Die Ware", "A) …") or a short line standing alone.
       const words = l.text.split(/\s+/).length;
-      const numbered = /^(\d{1,2}(\.\d{1,2}){0,3}\.?|[IVX]{1,5}\.)\s+[A-ZÄÖÜ]/.test(l.text) && l.text.length < 100 && !/[.,;]$/.test(l.text) && words <= 14 && l.x2 < m.right - body * 1.5;
-      const standalone = gapAbove > lineGap * 1.4 && l.text.length < 70 && words <= 9 && /^[A-ZÄÖÜ0-9]/.test(l.text) && !/[.,;:]$/.test(l.text) && (!next || gapBelow > lineGap * 1.05 || (next.x - m.left) > body * 0.8 || next.col !== l.col);
+      const numbered = /^(\d{1,2}(\.\d{1,2}){1,3}\.?|\d{1,2}\.|[IVX]{1,5}\.|[A-Z]\))\s+[A-ZÄÖÜ]/.test(l.text) && l.text.length < 100 && !/[.,;]$/.test(l.text) && words <= 14 && l.x2 < m.right - body * 1.5;
+      const standalone = gapAbove > lineGap * 1.4 && l.text.length < 70 && words <= 9 && /^[A-ZÄÖÜ]/.test(l.text) && !/[.,;:=]$/.test(l.text) && !/[=+]/.test(l.text) && (!next || gapBelow > lineGap * 1.05 || (next.x - m.left) > body * 0.8 || next.col !== l.col);
       const sub = !big && !caps && Math.abs(l.size - body) < body * 0.2 && (numbered || (standalone && !cur?.x.match(/[a-zäöü,]$/)));
+      // a line of its own: not the continuation of a running sentence
+      const ownLine = !cur || prev?.n !== l.n || gapAbove > lineGap * 1.3 || /[.!?:;»«"”“)\]]$/.test(cur.x);
+      const kw = l.text.length <= 70 && ownLine && /^[\p{Lu}\d]/u.test(l.text) ? divisionKind(l.text) : null;
 
+      if (big && l.text.length <= 2 && /^[a-zäöü]/.test(l.text)) {
+        prev = l; // a stray lower-case glyph set large (logos, ornaments): not text
+        return;
+      }
       if (big && l.text.length <= 2 && /^[A-ZÄÖÜ]/.test(l.text)) {
         pendingCap = l.text; // drop cap: belongs to the next paragraph
         prev = l;
         return;
       }
+      if (kw) {
+        // "Fünftes Kapitel", "Zweiter Abschnitt", "Vorwort zur ersten Auflage": structure even when set in body type
+        flush();
+        blocks.push({ t: 'h', l: kw === 'part' ? 1 : 2, x: l.text, pg: p.n, k: kw });
+        expectTitle = kw !== 'front';
+        prev = l;
+        return;
+      }
+      if (expectTitle) {
+        expectTitle = false;
+        const isTitle = l.text.length <= 90 && /^\p{Lu}/u.test(l.text) && !/[.,;]$/.test(l.text) && (big || centered || l.x2 < m.right - body * 3);
+        if (isTitle) {
+          flush();
+          blocks.push({ t: 'h', l: big ? levelOf(l.size) : 2, x: l.text, pg: p.n, k: 'title' });
+          prev = l;
+          return;
+        }
+      }
       if (big || (caps && centered) || sub) {
         const level = big ? levelOf(l.size) : sub ? (/^\d{1,2}\.\d/.test(l.text) ? 4 : 3) : 3;
         const last = blocks[blocks.length - 1];
-        if (!cur && last && last.t === 'h' && last.l === level && last.pg === p.n && prev && prev.n === l.n && gapAbove < l.size * 2.2) {
+        if (!cur && last && last.t === 'h' && !last.k && last.l === level && last.pg === p.n && prev && prev.n === l.n && gapAbove < l.size * 2.2) {
           last.x = join(last.x, l.text);
         } else {
           flush();
@@ -191,7 +218,20 @@ function analyse({ outline = [], pages: count }) {
   }
   flush();
 
-  return { v: 1, status: 'ok', pages: count, chars: totalChars, body, chapters: chapters(blocks, notes, outline, count) };
+  return { v: VERSION, status: 'ok', pages: count, chars: totalChars, body, chapters: chapters(blocks, notes, outline, count) };
+}
+
+// Division headings recognised by their wording, in German, English, French, Italian and Spanish.
+const NUM = '(?:\\d{1,3}|[IVXLC]{1,7})';
+const DIV_CHAPTER = new RegExp(`^(?:\\p{L}+\\s+|${NUM}\\.?\\s+)?(?:kapitel|chapter|chapitre|capitolo|capítulo)(?:\\s+(?:${NUM}|\\p{L}+))?\\.?$`, 'iu');
+const DIV_PART = new RegExp(`^(?:\\p{L}+\\s+|${NUM}\\.?\\s+)?(?:abschnitt|teil|buch|part|book|livre|parte)(?:\\s+(?:${NUM}|\\p{L}+))?[.:]?$`, 'iu');
+const DIV_FRONT = /^(?:vorwort|vorrede|nachwort|einleitung|einführung|prolog|epilog|anhang|nachbemerkung|preface|foreword|introduction|afterword|appendix|prologue|epilogue)\b[^.,;]{0,50}$/i;
+function divisionKind(text) {
+  const t = text.trim();
+  if (t.length <= 40 && DIV_CHAPTER.test(t)) return 'ch';
+  if (t.length <= 40 && DIV_PART.test(t)) return 'part';
+  if (DIV_FRONT.test(t)) return 'front';
+  return null;
 }
 
 function join(a, b) {
@@ -301,12 +341,24 @@ function chapters(blocks, notes, outline, count) {
       }
       if (!starts.length || i > starts[starts.length - 1].i) starts.push({ i, title: o.title, fromOutline: true });
     }
+  } else if (blocks.filter((b) => b.k === 'ch').length >= 3) {
+    // Chapters named in the text ("Fünftes Kapitel"), plus prefaces and afterwords. A part heading
+    // and its title directly above a chapter ("Zweiter Abschnitt / Die Verwandlung …") open that chapter.
+    blocks.forEach((b, i) => {
+      if (b.t !== 'h' || (b.k !== 'ch' && b.k !== 'front')) return;
+      let s = i;
+      while (s > 0 && i - s < 3 && blocks[s - 1].t === 'h' && (blocks[s - 1].k === 'part' || blocks[s - 1].k === 'title')) s--;
+      const name = blocks[i + 1]?.k === 'title' ? `${b.x} · ${blocks[i + 1].x}` : b.x;
+      if (!starts.length || s > starts[starts.length - 1].i) starts.push({ i: s, title: name, fromOutline: false });
+    });
   } else {
-    // The highest heading level that occurs often enough to structure the text.
+    // The highest heading level that occurs often enough, and spread widely enough, to structure the text
+    // (three headings on the title page are not a structure).
     for (const lvl of [1, 2, 3]) {
       const hs = [];
-      blocks.forEach((b, i) => b.t === 'h' && b.l === lvl && hs.push(i));
-      if (hs.length >= 3 && hs.length <= 600) {
+      blocks.forEach((b, i) => b.t === 'h' && b.l === lvl && /\p{L}.*\p{L}.*\p{L}/u.test(b.x) && hs.push(i));
+      const spread = new Set(hs.map((i) => blocks[i].pg)).size;
+      if (hs.length >= 3 && hs.length <= 600 && spread >= 3) {
         starts = hs.map((i) => ({ i, title: blocks[i].x, fromOutline: false }));
         break;
       }
