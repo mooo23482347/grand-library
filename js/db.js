@@ -2,12 +2,12 @@
 //
 // Schema rules:
 //  - Never change a published version. Add db.version(n + 1) with an .upgrade() instead.
-//  - A document exists exactly once (documents + files). Rooms and collections only point at it
+//  - A document exists exactly once (documents + files). Shelves and collections only point at it
 //    through `assignments`, so one volume can stand in many places without being copied.
-//  - Deleting a room or a collection only removes assignments, never documents.
+//  - Deleting a shelf or a collection only removes assignments, never documents.
 
 import Dexie from 'https://cdn.jsdelivr.net/npm/dexie@4.0.8/+esm';
-import { SEED_ROOMS, seedRecords } from './seed.js';
+import { SEED_ROOMS, seedRecords, germanRenames } from './seed.js';
 
 export const db = new Dexie('grand-library');
 
@@ -31,12 +31,16 @@ db.version(1).stores({
   settings: 'key',
 });
 
-// Example of a future migration:
-// db.version(2).stores({ documents: 'id, kind, fileId, createdAt, series' })
-//   .upgrade(tx => tx.table('documents').toCollection().modify(d => { d.series ??= ''; }));
+// Version 2 (redesign):
+//  reflow — reading text converted from PDFs (local cache only, rebuilt on each device on demand)
+//  prefs  — preferences that follow the reader across devices (synced)
+db.version(2).stores({
+  reflow: 'documentId',
+  prefs: 'id',
+});
 
 /** Tables mirrored to the cloud. Files and covers travel separately (Supabase Storage). */
-export const SYNCED = ['departments', 'collections', 'documents', 'assignments', 'tags', 'documentTags', 'notes', 'highlights', 'bookmarks', 'progress', 'texts'];
+export const SYNCED = ['departments', 'collections', 'documents', 'assignments', 'tags', 'documentTags', 'notes', 'highlights', 'bookmarks', 'progress', 'texts', 'prefs'];
 
 const PK = { progress: 'documentId', texts: 'documentId' };
 export const pkOf = (tbl) => PK[tbl] || 'id';
@@ -46,15 +50,44 @@ export const keyOf = (tbl, obj) => obj[pkOf(tbl)];
 const DATA_MIGRATIONS = [
   {
     version: 1,
-    name: 'Furnish the initial rooms',
+    name: 'Furnish the initial shelves',
     async run() {
       // Deterministic ids and updatedAt = 0: a second device seeds identical records, and any
       // edit made elsewhere (rename, delete) always wins during sync.
       const { departments, collections } = seedRecords(SEED_ROOMS);
-      const existing = await db.departments.count();
-      if (existing) return;
+      if (await db.departments.count()) return;
       await db.departments.bulkPut(departments);
       await db.collections.bulkPut(collections);
+    },
+  },
+  {
+    version: 2,
+    name: 'German names for the original shelves',
+    async run() {
+      // Only shelves and collections that still carry their original English name are renamed.
+      // Names the user chose stay untouched. Changes go through the outbox so they sync.
+      const { depts, cols } = germanRenames();
+      const now = Date.now();
+      await db.transaction('rw', db.departments, db.collections, db.outbox, async () => {
+        for (const [id, r] of depts) {
+          const d = await db.departments.get(id);
+          if (d && d.name === r.from && r.from !== r.to) {
+            await db.departments.put({ ...d, name: r.to, subtitle: '', leather: r.leather, updatedAt: now });
+            await db.outbox.put({ tbl: 'departments', id, at: now });
+          }
+        }
+        for (const [id, r] of cols) {
+          const c = await db.collections.get(id);
+          if (c && c.name === r.from && r.from !== r.to) {
+            await db.collections.put({ ...c, name: r.to, updatedAt: now });
+            await db.outbox.put({ tbl: 'collections', id, at: now });
+          }
+        }
+      });
+      // Older app versions skipped record types they did not know (e.g. prefs). Read everything
+      // once more on the next sync; applying records is idempotent (newest edit wins).
+      const keys = await db.settings.toCollection().primaryKeys();
+      await db.settings.bulkDelete(keys.filter((k) => String(k).startsWith('sync.cursor.')));
     },
   },
 ];
@@ -68,7 +101,6 @@ export async function openDb() {
       await db.meta.put({ key: 'dataVersion', value: m.version });
     }
   }
-  // Ask the browser not to evict the library under storage pressure.
   try {
     if (navigator.storage?.persist && !(await navigator.storage.persisted())) await navigator.storage.persist();
   } catch {

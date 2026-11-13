@@ -1,20 +1,20 @@
-// The catalogue card: everything about one volume, opened by pulling it from the shelf.
+// The catalogue card of one book: a sheet on the phone, an inspector panel on the desktop.
 
 import { h, fromHTML, formatBytes, formatDate, debounce, download, isTouch } from '../util.js';
 import {
   idx, state, placementsOf, unassign, assignMany, moveDocs, addTag, removeTag, updateDocument, deleteDocuments,
   getFileBlob, scopeLabel, noteTitle, deleteBookmark, snapshotAssignments, restoreAssignments,
 } from '../store.js';
-import { kindLabel, noteKindLabel, FORMATS, KINDS, KIND_GROUPS, ALL_SPINE_COLORS } from '../kinds.js';
+import { kindLabel, noteKind, FORMATS, KINDS, KIND_GROUPS, COVER_COLORS } from '../kinds.js';
 import { icon } from '../ui/icons.js';
-import { openModal, confirmDialog, toast, showMenu } from '../ui/modal.js';
+import { openSheet, confirmDialog, toast, showMenu, isDesktop } from '../ui/modal.js';
+import { group, cell } from '../ui/controls.js';
 import { pickPlacements } from '../ui/picker.js';
-import { coverEl, spineSpec } from './shelf.js';
+import { coverEl } from './covers.js';
 import { openNoteEditor } from '../ui/noteEditor.js';
 import { lookupDoi } from '../import/lookup.js';
 
-const layer = () => document.getElementById('layer-drawer');
-let current = null; // {docId, scope}
+let current = null; // { docId, scope, sheet }
 
 export function isDocPanelOpen() {
   return !!current;
@@ -26,139 +26,131 @@ export function openDocPanel(docId, scope = '') {
     closeDocPanel();
     return false;
   }
-  const same = current && current.docId === docId;
-  current = { docId, scope };
-  const scrollTop = same ? layer().querySelector('.drawer-body')?.scrollTop || 0 : 0;
-  layer().replaceChildren(drawer(doc, scope));
-  document.documentElement.classList.add('drawer-open');
-  const body = layer().querySelector('.drawer-body');
-  if (body) body.scrollTop = scrollTop;
-  const el = layer().querySelector('.drawer');
-  if (!same) {
-    void el.offsetWidth; // commit the closed position so the slide-in transition runs
-    el.classList.add('in');
-  } else el.classList.add('in', 'no-anim');
+  if (current?.docId === docId) {
+    current.scope = scope;
+    refreshDocPanel();
+    return true;
+  }
+  closeDocPanel();
+  const body = h('div', { class: 'card' });
+  const sheet = openSheet({
+    title: '',
+    tall: !isDesktop(),
+    panel: isDesktop(),
+    className: 'card-sheet',
+    right: null,
+    body,
+    onClose: () => {
+      const wasCurrent = current?.sheet === sheet;
+      current = null;
+      if (wasCurrent && location.hash.includes('doc=')) location.hash = location.hash.split('?')[0] || '#/';
+    },
+  });
+  current = { docId, scope, sheet, body };
+  draw();
   return true;
 }
 
 export function refreshDocPanel() {
-  if (current) {
-    if (!idx.doc.has(current.docId)) dismiss();
-    else openDocPanel(current.docId, current.scope);
-  }
+  if (!current) return;
+  if (!idx.doc.has(current.docId)) return closeDocPanel();
+  const scroller = current.sheet.body;
+  const top = scroller.scrollTop;
+  draw();
+  scroller.scrollTop = top;
 }
 
 export function closeDocPanel() {
   if (!current) return;
+  const s = current.sheet;
   current = null;
-  const d = layer().querySelector('.drawer');
-  document.documentElement.classList.remove('drawer-open');
-  if (d) {
-    d.classList.remove('in', 'no-anim');
-    setTimeout(() => {
-      if (!current) layer().replaceChildren();
-    }, 260);
-  } else layer().replaceChildren();
+  s.close();
 }
 
-/** Close by navigating, so the browser's back button and the URL stay in step. */
-function dismiss() {
-  const [base] = location.hash.split('?');
-  if (location.hash.includes('doc=')) location.hash = base || '#/';
-  else closeDocPanel();
+function draw() {
+  const { docId, scope, body } = current;
+  const doc = idx.doc.get(docId);
+  body.replaceChildren(...card(doc, scope));
 }
 
-function section(title, ...kids) {
-  return h('section', { class: 'card-section' }, h('h3', { class: 'card-h' }, title), ...kids);
-}
-
-function drawer(doc, scope) {
+function card(doc, scope) {
   const prog = idx.progress.get(doc.id);
   const pct = Math.round((prog?.percent || 0) * 100);
   const readable = ['epub', 'pdf', 'text'].includes(doc.format);
   const tags = idx.tagsByDoc.get(doc.id) || [];
-  const notes = (idx.notesByDoc.get(doc.id) || []).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const notes = [...(idx.notesByDoc.get(doc.id) || [])].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   const hls = idx.hlByDoc.get(doc.id) || [];
-  const bms = (idx.bmByDoc.get(doc.id) || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const bms = [...(idx.bmByDoc.get(doc.id) || [])].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   const places = placementsOf(doc.id);
-  const s = spineSpec(doc);
 
-  // ----- actions
-  const readBtn = readable
-    ? h('a', { class: 'btn btn-primary card-read', href: `#/read/${doc.id}` }, fromHTML(icon('book')), pct > 0 && pct < 99 ? `Continue reading · ${pct}%` : pct >= 99 ? 'Read again' : 'Begin reading')
-    : doc.format === 'file'
-      ? h('button', { type: 'button', class: 'btn btn-primary card-read', onClick: () => openOriginal(doc) }, fromHTML(icon('download')), 'Open the original file')
-      : null;
+  const meta = [doc.year, doc.pages ? `${doc.pages} Seiten` : null, FORMATS[doc.format]].filter(Boolean).join(' · ');
+  const readLabel = pct > 0 && pct < 99 ? `Weiterlesen · ${pct} %` : pct >= 99 ? 'Noch einmal lesen' : 'Lesen';
 
-  const moreBtn = h('button', {
-    type: 'button',
-    class: 'icon-btn',
-    'aria-label': 'More actions',
-    html: icon('dots'),
-    onClick: (e) =>
-      showMenu(e.currentTarget, [
-        { label: 'Edit catalogue entry', icon: 'pen', onClick: () => editDocumentDialog(doc) },
-        doc.fileId ? { label: 'Download original file', icon: 'download', onClick: () => openOriginal(doc, true) } : null,
-        doc.doi ? { label: 'Open DOI record', icon: 'link', onClick: () => window.open(`https://doi.org/${doc.doi}`, '_blank', 'noopener') } : null,
-        '-',
-        { label: 'Delete from the library…', icon: 'trash', danger: true, onClick: () => deleteDialog(doc) },
-      ].filter(Boolean)),
-  });
+  const top = h(
+    'div',
+    { class: 'card-top' },
+    coverEl(doc, 'card-cover'),
+    h('h2', { class: 'card-title' }, doc.title || 'Ohne Titel'),
+    doc.author ? h('p', { class: 'card-author' }, doc.author) : null,
+    h('p', { class: 'card-meta' }, [kindLabel(doc.kind), meta].filter(Boolean).join(' · ')),
+    readable
+      ? h('a', { class: 'btn filled block', href: `#/read/${doc.id}` }, fromHTML(icon('bookOpen')), readLabel)
+      : doc.format === 'file'
+        ? h('button', { type: 'button', class: 'btn filled block', onClick: () => openOriginal(doc) }, fromHTML(icon('download')), 'Datei öffnen')
+        : null,
+    pct > 0 ? h('div', { class: 'card-progress' }, h('span', { class: 'progress' }, h('span', { style: { width: `${pct}%` } })), h('span', null, `${pct} % gelesen`)) : null,
+    h('div', { class: 'card-quick' },
+      quick('pencil', 'Bearbeiten', () => editDocumentDialog(doc)),
+      quick('bulb', 'Gedanke', () => openNoteEditor({ kind: 'thought', documentId: doc.id })),
+      quick('quote', 'Zitat', () => openNoteEditor({ kind: 'quote', documentId: doc.id })),
+      quick('dots', 'Mehr', (e) => moreMenu(e.currentTarget, doc)),
+    ),
+  );
 
-  // ----- shelves
+  // shelves
   const placeRows = places.map((p) =>
     h(
-      'li',
-      { class: 'place-row' },
-      h('a', { class: 'place-link', href: p.collectionId ? `#/room/${p.departmentId}/${p.collectionId}` : `#/room/${p.departmentId}` }, p.label),
+      'div',
+      { class: 'cell' },
+      h('a', { class: 'cell-main', href: p.collectionId ? `#/room/${p.departmentId}/${p.collectionId}` : `#/room/${p.departmentId}` }, h('span', { class: 'cell-title' }, p.label)),
       h('button', {
         type: 'button',
-        class: 'icon-btn small',
-        'aria-label': `Take off ${p.label}`,
-        title: 'Take off this shelf (the volume stays in the library)',
-        html: icon('close'),
+        class: 'icon-btn circle',
+        'aria-label': `Aus ${p.label} entfernen`,
+        title: 'Aus diesem Regal entfernen (das Buch bleibt erhalten)',
+        html: icon('minus'),
         onClick: async () => {
           const snap = snapshotAssignments([doc.id]);
           await unassign(p.id);
-          toast(places.length === 1 ? 'Taken off its last shelf. It now waits on the returns table.' : `Taken off ${p.label}.`, {
-            action: { label: 'Undo', onClick: () => restoreAssignments([doc.id], snap) },
-          });
+          toast(places.length === 1 ? 'Jetzt „Ohne Regal“' : `Aus ${p.label} entfernt`, { action: { label: 'Widerrufen', onClick: () => restoreAssignments([doc.id], snap) } });
         },
       }),
     ),
   );
-
-  const shelveAlso = h('button', {
-    type: 'button',
-    class: 'btn btn-ghost small',
-    onClick: async () => {
-      const t = await pickPlacements({ title: `Also shelve “${doc.title}” in…`, confirm: 'Shelve also here', selected: [] });
+  if (!places.length) placeRows.push(cell({ title: 'In keinem Regal', sub: 'Steht unter „Ohne Regal“' }));
+  placeRows.push(
+    cell({ title: 'Auch einordnen in …', accent: true, onClick: async () => {
+      const t = await pickPlacements({ title: 'Auch einordnen in', confirm: 'Einordnen' });
       if (t) {
         await assignMany([doc.id], t);
-        toast('Shelved. The volume itself was not copied.');
+        toast('Eingeordnet – das Buch wurde nicht kopiert');
       }
-    },
-  }, fromHTML(icon('plus')), 'Also shelve in…');
+    } }),
+  );
+  if (places.length) {
+    placeRows.push(
+      cell({ title: scope ? 'Verschieben …' : 'Verschieben …', accent: true, onClick: async () => {
+        const t = await pickPlacements({ title: 'Verschieben nach', subtitle: scope ? `Es verlässt ${scopeLabel(scope)}; andere Regale bleiben.` : 'Es verlässt alle bisherigen Regale.', confirm: 'Verschieben' });
+        if (!t) return;
+        const snap = snapshotAssignments([doc.id]);
+        await moveDocs([doc.id], scope, t);
+        toast('Verschoben', { action: { label: 'Widerrufen', onClick: () => restoreAssignments([doc.id], snap) } });
+      } }),
+    );
+  }
 
-  const moveBtn = h('button', {
-    type: 'button',
-    class: 'btn btn-ghost small',
-    onClick: async () => {
-      const from = scope && places.some((p) => p) ? scope : '';
-      const t = await pickPlacements({
-        title: `Move “${doc.title}” to…`,
-        subtitle: from ? `It leaves ${scopeLabel(from)}. Its other shelves stay as they are.` : 'It leaves all its current shelves.',
-        confirm: 'Move',
-      });
-      if (!t) return;
-      const snap = snapshotAssignments([doc.id]);
-      await moveDocs([doc.id], from, t);
-      toast('Moved.', { action: { label: 'Undo', onClick: () => restoreAssignments([doc.id], snap) } });
-    },
-  }, fromHTML(icon('move')), scope ? 'Move from here…' : 'Move…');
-
-  // ----- tags
-  const tagInput = h('input', { class: 'tag-input', type: 'text', placeholder: 'Add a tag…', list: 'gl-tag-list', 'aria-label': 'Add a tag' });
+  // tags
+  const tagInput = h('input', { type: 'text', class: 'tag-input', placeholder: 'Tag hinzufügen', list: 'tag-suggestions', 'aria-label': 'Tag hinzufügen', enterkeyhint: 'done' });
   tagInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
@@ -166,181 +158,91 @@ function drawer(doc, scope) {
       if (v) await addTag([doc.id], v);
     }
   });
-  const tagList = h('datalist', { id: 'gl-tag-list' }, state.tags.map((t) => h('option', { value: t.name })));
+  const tagRow = h(
+    'div',
+    { class: 'cell stack' },
+    h('div', { class: 'chips' },
+      tags.map((t) => h('span', { class: 'chip' }, h('a', { href: `#/tag/${t.id}` }, t.name), h('button', { type: 'button', class: 'x', 'aria-label': `Tag ${t.name} entfernen`, html: icon('close'), onClick: () => removeTag([doc.id], t.id) }))),
+    ),
+    tagInput,
+    h('datalist', { id: 'tag-suggestions' }, state.tags.map((t) => h('option', { value: t.name }))),
+  );
 
-  // ----- remarks
-  const remarks = h('textarea', { class: 'remarks', rows: 3, placeholder: 'Private remarks on this volume…', 'data-fk': `remarks-${doc.id}` }, doc.remarks || '');
+  // notes
+  const noteRows = notes.map((n) => {
+    const k = noteKind(n.kind);
+    return cell({ title: noteTitle(n), sub: [k.label, n.chapter].filter(Boolean).join(' · '), href: `#/scriptorium/${n.id}`, icon: k.icon, tint: 'var(--accent)' });
+  });
+  noteRows.push(
+    h('div', { class: 'cell note-actions' },
+      h('button', { type: 'button', class: 'btn small tinted', onClick: () => openNoteEditor({ kind: 'summary', documentId: doc.id, title: `Zusammenfassung: ${doc.title}` }) }, 'Zusammenfassung'),
+      h('button', { type: 'button', class: 'btn small tinted', onClick: () => openNoteEditor({ kind: 'thought', documentId: doc.id }) }, 'Gedanke'),
+      h('button', { type: 'button', class: 'btn small tinted', onClick: () => openNoteEditor({ kind: 'quote', documentId: doc.id }) }, 'Zitat'),
+    ),
+  );
+  if (hls.length) noteRows.push(cell({ title: `${hls.length} ${hls.length === 1 ? 'Markierung' : 'Markierungen'}`, href: `#/scriptorium?doc=${doc.id}&kind=marks`, icon: 'highlighter', tint: 'var(--warn)' }));
+
+  // remarks
+  const remarks = h('textarea', { rows: 3, placeholder: 'Eigene Anmerkungen zu diesem Buch …', 'data-fk': `remarks-${doc.id}`, 'aria-label': 'Anmerkungen' }, doc.remarks || '');
   const saveRemarks = debounce((v) => updateDocument(doc.id, { remarks: v }), 700);
   remarks.addEventListener('input', () => saveRemarks(remarks.value));
   remarks.addEventListener('blur', () => saveRemarks.flush());
 
-  // ----- table of contents
-  const toc = (doc.toc || []).slice(0, 400);
-  const tocEl = toc.length
-    ? h(
-        'details',
-        { class: 'card-toc' },
-        h('summary', null, `Contents · ${toc.length} ${toc.length === 1 ? 'entry' : 'entries'}`),
-        h(
-          'ol',
-          { class: 'toc-list' },
-          toc.map((t) =>
-            h(
-              'li',
-              { class: 'toc-row', style: { '--depth': t.depth || 0 } },
-              readable ? h('a', { href: `#/read/${doc.id}?loc=${encodeURIComponent(JSON.stringify(t.loc || {}))}` }, t.label) : h('span', null, t.label),
-              h('button', {
-                type: 'button',
-                class: 'toc-sum',
-                title: 'Write a summary of this chapter',
-                'aria-label': `Summarise ${t.label}`,
-                html: icon('quill'),
-                onClick: () => openNoteEditor({ kind: 'summary', documentId: doc.id, chapter: t.label, loc: t.loc || null, title: `Summary: ${t.label}` }),
-              }),
-            ),
-          ),
-        ),
-      )
-    : null;
+  const toc = (doc.toc || []).slice(0, 300);
+  const details = [
+    ['Art', kindLabel(doc.kind)],
+    ['Format', FORMATS[doc.format] || doc.format],
+    ['Verlag', doc.publisher],
+    ['Jahr', doc.year],
+    ['Sprache', doc.language],
+    ['Seiten', doc.pages],
+    ['ISBN', doc.isbn],
+    ['DOI', doc.doi],
+    ['Datei', doc.fileName ? `${doc.fileName} · ${formatBytes(doc.fileSize)}` : null],
+    ['Hinzugefügt', formatDate(doc.createdAt)],
+  ].filter(([, v]) => v != null && v !== '');
 
-  const head = h(
-    'header',
-    { class: 'drawer-head' },
-    h('span', { class: 'drawer-kicker' }, 'Catalogue card'),
-    h('div', { class: 'drawer-head-actions' }, moreBtn, h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Close', html: icon('close'), onClick: dismiss })),
-  );
-
-  const body = h(
-    'div',
-    { class: 'drawer-body' },
-    h(
-      'div',
-      { class: 'card-top' },
-      coverEl(doc, 'card-cover'),
-      h(
-        'div',
-        { class: 'card-ident' },
-        h('h2', { class: 'card-title' }, doc.title || 'Untitled'),
-        doc.author ? h('p', { class: 'card-author' }, doc.author) : null,
-        h('p', { class: 'card-meta' }, [kindLabel(doc.kind), doc.year, doc.pages ? `${doc.pages} pages` : null].filter(Boolean).join(' · ')),
-        pct > 0 ? h('div', { class: 'card-progress', style: { '--p': `${pct}%` }, title: `${pct}% read` }) : null,
-      ),
-    ),
-    h('div', { class: 'card-actions' }, readBtn, h('button', { type: 'button', class: 'btn btn-ghost', onClick: () => editDocumentDialog(doc) }, fromHTML(icon('pen')), 'Edit')),
-    section(
-      'Shelved in',
-      places.length ? h('ul', { class: 'place-list' }, placeRows) : h('p', { class: 'muted' }, 'Not on any shelf. It waits on the returns table.'),
-      h('div', { class: 'row-actions' }, shelveAlso, places.length ? moveBtn : null),
-    ),
-    section(
-      'Tags',
-      h(
-        'div',
-        { class: 'tag-row' },
-        tags.map((t) =>
-          h(
-            'span',
-            { class: 'tag-chip' },
-            h('a', { href: `#/tag/${t.id}` }, t.name),
-            h('button', { type: 'button', class: 'tag-x', 'aria-label': `Remove tag ${t.name}`, onClick: () => removeTag([doc.id], t.id) }, '×'),
-          ),
-        ),
-        tagInput,
-        tagList,
-      ),
-    ),
-    section(
-      'Knowledge',
-      notes.length
-        ? h(
-            'ul',
-            { class: 'note-list' },
-            notes.map((n) =>
-              h(
-                'li',
-                null,
-                h(
-                  'a',
-                  { class: 'note-link', href: `#/scriptorium/${n.id}` },
-                  h('span', { class: `note-kind k-${n.kind}` }, noteKindLabel(n.kind)),
-                  h('span', { class: 'note-title' }, noteTitle(n)),
-                  n.chapter ? h('span', { class: 'note-chapter' }, n.chapter) : null,
-                ),
-              ),
-            ),
-          )
-        : h('p', { class: 'muted' }, 'No summaries, thoughts or quotations yet.'),
-      h(
-        'div',
-        { class: 'row-actions' },
-        h('button', { type: 'button', class: 'btn btn-ghost small', onClick: () => openNoteEditor({ kind: 'summary', documentId: doc.id, title: `Summary of ${doc.title}` }) }, fromHTML(icon('quill')), 'Summary'),
-        h('button', { type: 'button', class: 'btn btn-ghost small', onClick: () => openNoteEditor({ kind: 'thought', documentId: doc.id }) }, fromHTML(icon('lamp')), 'Own thought'),
-        h('button', { type: 'button', class: 'btn btn-ghost small', onClick: () => openNoteEditor({ kind: 'quote', documentId: doc.id }) }, fromHTML(icon('scroll')), 'Quotation'),
-      ),
-      hls.length ? h('p', { class: 'muted small' }, `${hls.length} ${hls.length === 1 ? 'passage' : 'passages'} marked while reading. `, h('a', { href: `#/scriptorium?doc=${doc.id}&kind=marks` }, 'Show marginalia')) : null,
-    ),
+  return [
+    top,
+    group({ head: 'Regale', rows: placeRows }),
+    group({ head: 'Tags', rows: [tagRow] }),
+    group({ head: 'Notizen', rows: noteRows, icons: true }),
     bms.length
-      ? section(
-          'Bookmarks',
-          h(
-            'ul',
-            { class: 'bm-list' },
-            bms.map((b) =>
-              h(
-                'li',
-                { class: 'bm-row' },
-                h('a', { href: `#/read/${doc.id}?loc=${encodeURIComponent(JSON.stringify(b.loc))}` }, fromHTML(icon('ribbonFill')), b.label || 'Bookmark'),
-                h('button', { type: 'button', class: 'icon-btn small', 'aria-label': 'Remove bookmark', html: icon('close'), onClick: () => deleteBookmark(b.id) }),
-              ),
-            ),
-          ),
-        )
+      ? group({ head: 'Lesezeichen', rows: bms.map((b) => h('div', { class: 'cell' }, h('a', { class: 'cell-main', href: `#/read/${doc.id}?loc=${encodeURIComponent(JSON.stringify(b.loc))}` }, h('span', { class: 'cell-title' }, b.label || 'Lesezeichen')), h('button', { type: 'button', class: 'icon-btn circle', 'aria-label': 'Lesezeichen entfernen', html: icon('minus'), onClick: () => deleteBookmark(b.id) }))) })
       : null,
-    tocEl,
-    doc.description ? section('About this volume', h('p', { class: 'card-desc' }, doc.description)) : null,
-    section('Remarks', remarks),
-    section(
-      'Particulars',
-      h(
-        'dl',
-        { class: 'particulars' },
-        row('Type', kindLabel(doc.kind)),
-        row('Format', FORMATS[doc.format] || doc.format),
-        row('Publisher', doc.publisher),
-        row('Published', doc.year),
-        row('Language', doc.language),
-        row('ISBN', doc.isbn),
-        row('DOI', doc.doi ? h('a', { href: `https://doi.org/${doc.doi}`, target: '_blank', rel: 'noopener' }, doc.doi) : null),
-        row('Pages', doc.pages),
-        row('File', doc.fileName ? `${doc.fileName} · ${formatBytes(doc.fileSize)}` : null),
-        row('Acquired', formatDate(doc.createdAt)),
-      ),
-    ),
-  );
-
-  return h(
-    'div',
-    { class: 'drawer-wrap' },
-    h('div', { class: 'drawer-scrim', onClick: dismiss }),
-    h('aside', { class: 'drawer', style: { '--c': s.color }, role: 'dialog', 'aria-label': `Catalogue card: ${doc.title}` }, head, body),
-  );
+    toc.length
+      ? h('details', { class: 'group card-toc' }, h('summary', { class: 'group-head' }, h('span', null, `Inhalt · ${toc.length}`), fromHTML(icon('down'))), h('ul', { class: 'list' }, toc.map((t) => h('li', null, h('div', { class: 'cell toc-cell', style: { '--depth': t.depth || 0 } },
+          readable ? h('a', { class: 'cell-main', href: `#/read/${doc.id}?loc=${encodeURIComponent(JSON.stringify(t.loc || {}))}` }, h('span', { class: 'cell-title' }, t.label)) : h('span', { class: 'cell-main' }, h('span', { class: 'cell-title' }, t.label)),
+          h('button', { type: 'button', class: 'icon-btn plain', 'aria-label': `${t.label} zusammenfassen`, title: 'Kapitel zusammenfassen', html: icon('fileText'), onClick: () => openNoteEditor({ kind: 'summary', documentId: doc.id, chapter: t.label, loc: t.loc || null, title: `Zusammenfassung: ${t.label}` }) }),
+        ))))) : null,
+    doc.description ? group({ head: 'Beschreibung', rows: [h('div', { class: 'cell stack' }, h('p', { class: 'card-desc' }, doc.description))] }) : null,
+    group({ head: 'Anmerkungen', rows: [h('label', { class: 'cell stack' }, remarks)] }),
+    group({ head: 'Details', rows: details.map(([k, v]) => cell({ title: k, detail: String(v) })) }),
+  ];
 }
 
-function row(k, v) {
-  if (v == null || v === '') return null;
-  return [h('dt', null, k), h('dd', null, v)];
+function quick(ic, label, onClick) {
+  return h('button', { type: 'button', class: 'quick', onClick }, h('span', { class: 'quick-icon', html: icon(ic) }), h('span', null, label));
+}
+
+function moreMenu(anchor, doc) {
+  showMenu(anchor, [
+    { label: 'Angaben bearbeiten', icon: 'pencil', onClick: () => editDocumentDialog(doc) },
+    doc.fileId ? { label: 'Originaldatei laden', icon: 'download', onClick: () => openOriginal(doc, true) } : null,
+    doc.format === 'pdf' ? { label: 'Original-PDF ansehen', icon: 'file', onClick: () => (location.hash = `#/read/${doc.id}?view=original`) } : null,
+    doc.doi ? { label: 'DOI-Eintrag öffnen', icon: 'link', onClick: () => window.open(`https://doi.org/${doc.doi}`, '_blank', 'noopener') } : null,
+    '-',
+    { label: 'Aus der Bibliothek löschen', icon: 'trash', danger: true, onClick: () => deleteDialog(doc) },
+  ]);
 }
 
 async function openOriginal(doc, forceDownload = false) {
-  const t = toast('Fetching the file…', { timeout: 0 });
+  const t = toast('Datei wird geladen …', { timeout: 0 });
   try {
     const blob = await getFileBlob(doc.fileId);
     t();
-    if (!blob) {
-      toast('The file is not on this device and could not be fetched from the cloud.', { kind: 'error' });
-      return;
-    }
-    if (forceDownload || isTouch()) download(blob, doc.fileName || `${doc.title}`);
+    if (!blob) return toast('Die Datei ist auf diesem Gerät nicht vorhanden und konnte nicht geladen werden.');
+    if (forceDownload || isTouch()) download(blob, doc.fileName || doc.title);
     else {
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener');
@@ -348,112 +250,90 @@ async function openOriginal(doc, forceDownload = false) {
     }
   } catch (e) {
     t();
-    toast(e.message, { kind: 'error' });
+    toast(e.message);
   }
 }
 
 async function deleteDialog(doc) {
   const notes = (idx.notesByDoc.get(doc.id) || []).length;
-  const keep = h('input', { type: 'checkbox', checked: true });
-  const ok = await confirmDialog({
-    title: `Delete “${doc.title}”?`,
-    message: h(
-      'div',
-      null,
-      h('p', { class: 'modal-text' }, 'The volume is removed from every room, with its file, highlights, bookmarks and reading progress. This cannot be undone.'),
-      notes ? h('label', { class: 'check-row' }, keep, ` Keep my ${notes} ${notes === 1 ? 'note' : 'notes'} about it in the Scriptorium`) : null,
-    ),
-    confirm: 'Delete for good',
+  const r = await confirmDialog({
+    title: `„${doc.title}“ löschen?`,
+    message: 'Das Buch verschwindet aus allen Regalen, mit Datei, Markierungen, Lesezeichen und Lesefortschritt. Das lässt sich nicht widerrufen.',
+    confirm: 'Löschen',
     danger: true,
+    check: notes ? { label: `${notes} ${notes === 1 ? 'Notiz' : 'Notizen'} behalten`, checked: true } : undefined,
   });
+  const ok = notes ? r.ok : r;
   if (!ok) return;
-  await deleteDocuments([doc.id], { keepNotes: keep.checked });
-  dismiss();
-  toast('Deleted.');
+  await deleteDocuments([doc.id], { keepNotes: notes ? r.checked : true });
+  closeDocPanel();
+  toast('Gelöscht');
 }
 
-// ---------------------------------------------------------------- edit dialog
+// ---------------------------------------------------------------- edit
 
 export function kindSelect(value) {
-  return h(
-    'select',
-    { class: 'field-input' },
-    KIND_GROUPS.map((g) => h('optgroup', { label: g }, KINDS.filter((k) => k.group === g).map((k) => h('option', { value: k.id, selected: k.id === value ? true : null }, k.label)))),
-  );
+  return h('select', { 'aria-label': 'Art' }, KIND_GROUPS.map((g) => h('optgroup', { label: g }, KINDS.filter((k) => k.group === g).map((k) => h('option', { value: k.id, selected: k.id === value ? true : null }, k.label)))));
 }
 
 export function editDocumentDialog(doc) {
   const f = {};
-  const field = (key, label, attrs = {}, multiline = false) => {
-    const el = multiline
-      ? h('textarea', { class: 'field-input', rows: attrs.rows || 4, ...attrs }, doc[key] || '')
-      : h('input', { class: 'field-input', type: 'text', value: doc[key] ?? '', ...attrs });
+  const row = (key, label, attrs = {}) => {
+    const el = attrs.multiline ? h('textarea', { rows: 5, 'aria-label': label }, doc[key] || '') : h('input', { type: 'text', value: doc[key] ?? '', 'aria-label': label, inputmode: attrs.inputmode || null });
     f[key] = el;
-    return h('label', { class: `field ${attrs.wide ? 'wide' : ''}` }, h('span', { class: 'field-label' }, label), el);
+    return h('label', { class: `cell ${attrs.multiline ? 'stack' : ''}` }, h('span', { class: 'label' }, label), el);
   };
   const kind = kindSelect(doc.kind);
-  let color = doc.spineColor || null;
-  const swatches = h('div', { class: 'swatch-row small' });
+  let color = doc.spineColor && COVER_COLORS.includes(doc.spineColor) ? doc.spineColor : null;
+  const swatches = h('div', { class: 'swatches' });
   const drawSw = () =>
     swatches.replaceChildren(
-      h('button', { type: 'button', class: `swatch auto ${!color ? 'on' : ''}`, title: 'Chosen by the binder', 'aria-label': 'Automatic colour', onClick: () => { color = null; drawSw(); } }, 'auto'),
-      ...ALL_SPINE_COLORS.map((c) => h('button', { type: 'button', class: `swatch ${c === color ? 'on' : ''}`, style: { '--c': c }, 'aria-label': c, onClick: () => { color = c; drawSw(); } })),
+      h('button', { type: 'button', class: `swatch auto ${!color ? 'on' : ''}`, 'aria-label': 'Automatisch', onClick: () => { color = null; drawSw(); } }, 'A'),
+      ...COVER_COLORS.map((c) => h('button', { type: 'button', class: `swatch ${c === color ? 'on' : ''}`, style: { '--c': c }, 'aria-label': c, onClick: () => { color = c; drawSw(); } })),
     );
   drawSw();
 
   const doiBtn = h('button', {
     type: 'button',
-    class: 'btn btn-ghost small',
+    class: 'btn small',
     onClick: async () => {
       const doi = f.doi.value.trim();
-      if (!doi) return toast('Enter a DOI first.');
-      doiBtn.disabled = true;
+      if (!doi) return toast('Erst eine DOI eingeben.');
       try {
         const m = await lookupDoi(doi);
-        for (const k of ['title', 'author', 'year', 'publisher', 'description']) if (m[k] && f[k] && !f[k].value.trim()) f[k].value = m[k];
-        if (m.title) f.title.value = m.title;
-        toast('Details filled in from the DOI record.');
+        for (const k of ['title', 'author', 'year', 'publisher', 'description']) if (m[k] && f[k]) f[k].value = m[k];
+        toast('Angaben aus dem DOI-Eintrag übernommen');
       } catch (e) {
-        toast(e.message, { kind: 'error' });
+        toast(e.message);
       }
-      doiBtn.disabled = false;
     },
-  }, 'Fill in from DOI');
+  }, 'Abrufen');
 
-  openModal({
-    title: 'Edit catalogue entry',
-    wide: true,
+  openSheet({
+    title: 'Angaben bearbeiten',
+    tall: true,
+    left: { label: 'Abbrechen' },
+    right: {
+      label: 'Sichern',
+      strong: true,
+      onClick: async (close) => {
+        const patch = {};
+        for (const [k, el] of Object.entries(f)) patch[k] = el.value.trim();
+        patch.pages = patch.pages ? parseInt(patch.pages, 10) || null : null;
+        patch.kind = kind.value;
+        patch.spineColor = color;
+        if (!patch.title) patch.title = 'Ohne Titel';
+        await updateDocument(doc.id, patch);
+        close();
+      },
+    },
     body: h(
       'div',
-      { class: 'form-grid two' },
-      field('title', 'Title', { wide: true }),
-      field('author', 'Author(s)', { placeholder: 'Separate several with “;”' }),
-      h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Type'), kind),
-      field('year', 'Year', { inputmode: 'numeric' }),
-      field('publisher', 'Publisher or journal'),
-      field('language', 'Language'),
-      field('pages', 'Pages', { inputmode: 'numeric' }),
-      field('isbn', 'ISBN'),
-      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'DOI'), h('div', { class: 'inline' }, (f.doi = h('input', { class: 'field-input', type: 'text', value: doc.doi || '' })), doiBtn)),
-      field('description', 'Description', { wide: true, rows: 5 }, true),
-      h('div', { class: 'field wide' }, h('span', { class: 'field-label' }, 'Colour of the binding'), swatches),
+      null,
+      group({ rows: [row('title', 'Titel'), row('author', 'Autor'), h('label', { class: 'cell' }, h('span', { class: 'label' }, 'Art'), kind), row('year', 'Jahr', { inputmode: 'numeric' }), row('pages', 'Seiten', { inputmode: 'numeric' })] }),
+      group({ rows: [row('publisher', 'Verlag'), row('language', 'Sprache'), row('isbn', 'ISBN'), h('label', { class: 'cell' }, h('span', { class: 'label' }, 'DOI'), (f.doi = h('input', { type: 'text', value: doc.doi || '', 'aria-label': 'DOI' })), doiBtn)] }),
+      group({ head: 'Beschreibung', rows: [h('label', { class: 'cell stack' }, (f.description = h('textarea', { rows: 5, 'aria-label': 'Beschreibung' }, doc.description || '')))] }),
+      group({ head: 'Farbe des Covers (wenn kein Bild)', rows: [h('div', { class: 'cell' }, swatches)] }),
     ),
-    actions: [
-      { label: 'Cancel' },
-      {
-        label: 'Save',
-        primary: true,
-        onClick: async (close) => {
-          const patch = {};
-          for (const [k, el] of Object.entries(f)) patch[k] = el.value.trim();
-          patch.pages = patch.pages ? parseInt(patch.pages, 10) || null : null;
-          patch.kind = kind.value;
-          patch.spineColor = color;
-          if (!patch.title) patch.title = 'Untitled';
-          await updateDocument(doc.id, patch);
-          close();
-        },
-      },
-    ],
   });
 }

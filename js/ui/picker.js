@@ -1,35 +1,25 @@
-// "Where should this stand?" — a directory of every room and collection to choose shelves from.
+// Choose shelves and collections: a sheet with one checkmark list per shelf.
 
 import { h, fold, fromHTML } from '../util.js';
 import { idx, childCollections, createCollection, createDepartment } from '../store.js';
-import { openModal, promptDialog, toast } from './modal.js';
-import { emblem, icon } from './icons.js';
+import { openSheet, promptDialog, toast } from './modal.js';
+import { icon } from './icons.js';
+import { searchField } from './controls.js';
 
 const keyOf = (t) => (t.colId ? `c:${t.colId}` : `d:${t.deptId}`);
 
 /**
- * Pick shelves. Resolves to an array of {deptId, colId} or null if cancelled.
- *  multi       several places at once (checkboxes) or a single one (radio)
- *  exclude     collection ids that may not be chosen (e.g. a subtree when re-hanging a collection)
- *  rootLabel   label of the room-level choice ("General shelf", "Top level of the room")
+ * Resolves to [{deptId, colId}] or null.
+ *  multi: several places (checkmarks) or one
+ *  exclude: collection ids that cannot be chosen
+ *  rootLabel: label of the shelf-level choice
  */
-export function pickPlacements({
-  title = 'Shelve in…',
-  subtitle = 'A volume can stand in several places. It is kept only once.',
-  selected = [],
-  multi = true,
-  confirm = 'Shelve here',
-  exclude = [],
-  rootLabel = 'General shelf',
-} = {}) {
+export function pickPlacements({ title = 'Regal wählen', subtitle = '', selected = [], multi = true, confirm = 'Fertig', exclude = [], rootLabel = 'Allgemein' } = {}) {
   return new Promise((resolve) => {
     const chosen = new Map(selected.filter((t) => t?.deptId).map((t) => [keyOf(t), { deptId: t.deptId, colId: t.colId || null }]));
     const excluded = new Set(exclude);
     let filter = '';
-
-    const filterInput = h('input', { class: 'field-input picker-filter', type: 'search', placeholder: 'Find a room or collection…', 'aria-label': 'Filter rooms and collections' });
-    const list = h('div', { class: 'picker-list', role: multi ? 'group' : 'radiogroup' });
-    const summary = h('p', { class: 'picker-summary' });
+    const list = h('div', { class: 'picker' });
 
     const toggle = (t) => {
       const k = keyOf(t);
@@ -43,28 +33,18 @@ export function pickPlacements({
       draw();
     };
 
-    const row = (t, label, depth, extraClass = '') => {
-      const k = keyOf(t);
-      const on = chosen.has(k);
-      return h(
+    const row = (t, label, depth, extra = '') =>
+      h(
         'button',
-        {
-          type: 'button',
-          class: `picker-row ${on ? 'on' : ''} ${extraClass}`,
-          style: { '--depth': depth },
-          role: multi ? 'checkbox' : 'radio',
-          'aria-checked': on ? 'true' : 'false',
-          onClick: () => toggle(t),
-        },
-        h('span', { class: `picker-box ${multi ? '' : 'round'}` }, on ? fromHTML(icon('check')) : null),
-        h('span', { class: 'picker-label' }, label),
+        { type: 'button', class: `cell pick-row ${extra}`, style: { '--depth': depth }, role: multi ? 'checkbox' : 'radio', 'aria-checked': chosen.has(keyOf(t)) ? 'true' : 'false', onClick: () => toggle(t) },
+        h('span', { class: 'cell-main' }, h('span', { class: 'cell-title' }, label)),
+        h('span', { class: 'pick-check', html: chosen.has(keyOf(t)) ? icon('check') : '' }),
       );
-    };
 
     const matches = (txt) => !filter || fold(txt).includes(filter);
 
     function draw() {
-      list.replaceChildren();
+      const out = [];
       for (const d of idx.depts) {
         const rows = [];
         const walk = (parentId, depth, trail) => {
@@ -78,75 +58,61 @@ export function pickPlacements({
         if (matches(d.name) || matches(rootLabel)) rows.push(row({ deptId: d.id, colId: null }, rootLabel, 0, 'root'));
         walk(null, 0, d.name);
         if (!rows.length) continue;
-        list.append(
-          h(
-            'section',
-            { class: 'picker-room', style: { '--leather': d.leather } },
-            h('header', { class: 'picker-room-head' }, fromHTML(emblem(d.emblem)), h('span', null, d.name)),
-            rows,
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'picker-new',
-                onClick: async () => {
-                  const name = await promptDialog({ title: `New collection in ${d.name}`, label: 'Name of the collection', confirm: 'Create' });
-                  if (!name) return;
-                  const c = await createCollection({ departmentId: d.id, name });
-                  toggle({ deptId: d.id, colId: c.id });
-                },
-              },
-              fromHTML(icon('plus')),
-              'New collection',
-            ),
-          ),
+        rows.push(
+          h('button', {
+            type: 'button',
+            class: 'cell accent',
+            onClick: async () => {
+              const name = await promptDialog({ title: 'Neue Sammlung', message: `In ${d.name}`, placeholder: 'Name', confirm: 'Hinzufügen' });
+              if (!name) return;
+              const c = await createCollection({ departmentId: d.id, name });
+              toggle({ deptId: d.id, colId: c.id });
+            },
+          }, 'Neue Sammlung …'),
         );
+        out.push(h('section', { class: 'group' }, h('h2', { class: 'group-head' }, h('span', { class: 'pick-shelf', style: { '--shelf-color': d.leather } }, d.name)), h('ul', { class: 'list' }, rows.map((r) => h('li', null, r)))));
       }
-      if (!list.children.length) list.append(h('p', { class: 'muted picker-empty' }, 'No room or collection by that name.'));
-      const n = chosen.size;
-      summary.textContent = n ? `${n} ${n === 1 ? 'place' : 'places'} chosen` : 'Nothing chosen yet';
+      if (!out.length) out.push(h('p', { class: 'muted', style: { textAlign: 'center' } }, 'Kein Regal mit diesem Namen.'));
+      out.push(
+        h('section', { class: 'group' }, h('ul', { class: 'list' }, h('li', null, h('button', {
+          type: 'button',
+          class: 'cell accent',
+          onClick: async () => {
+            const name = await promptDialog({ title: 'Neues Regal', placeholder: 'Name', confirm: 'Hinzufügen' });
+            if (!name) return;
+            const d = await createDepartment({ name });
+            toggle({ deptId: d.id, colId: null });
+            toast(`Regal „${d.name}“ angelegt`);
+          },
+        }, fromHTML(icon('plus')), 'Neues Regal …')))),
+      );
+      list.replaceChildren(...out);
+      sheet?.setTitle(multi && chosen.size ? `${title} (${chosen.size})` : title);
     }
 
-    filterInput.addEventListener('input', () => {
-      filter = fold(filterInput.value.trim());
-      draw();
-    });
-    draw();
-
-    openModal({
+    const search = searchField({ placeholder: 'Regal oder Sammlung suchen', onInput: (v) => { filter = fold(v.trim()); draw(); } });
+    let sheet = null;
+    sheet = openSheet({
       title,
       subtitle,
-      className: 'picker-modal',
-      body: h('div', { class: 'picker' }, filterInput, list, summary),
-      actions: [
-        {
-          label: 'New room',
-          className: 'btn-left',
-          onClick: async () => {
-            const name = await promptDialog({ title: 'Open a new room', label: 'Name of the room', confirm: 'Open room' });
-            if (name) {
-              const d = await createDepartment({ name });
-              toggle({ deptId: d.id, colId: null });
-              toast(`The room “${d.name}” has been opened.`);
-            }
+      tall: true,
+      className: 'picker-sheet',
+      left: { label: 'Abbrechen', onClick: (close) => close(null) },
+      right: {
+        label: confirm,
+        strong: true,
+        onClick: (close) => {
+          if (!chosen.size) {
+            toast('Bitte mindestens ein Regal wählen.');
             return false;
-          },
+          }
+          close([...chosen.values()]);
         },
-        { label: 'Cancel', onClick: (close) => close(null) },
-        {
-          label: confirm,
-          primary: true,
-          onClick: (close) => {
-            if (!chosen.size) {
-              toast('Choose at least one shelf.');
-              return false;
-            }
-            close([...chosen.values()]);
-          },
-        },
-      ],
+      },
+      body: h('div', null, search, list),
       onClose: (r) => resolve(Array.isArray(r) ? r : null),
     });
+    draw();
   });
 }
 

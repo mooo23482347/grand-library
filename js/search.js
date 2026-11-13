@@ -45,7 +45,7 @@ function scoreFields(fields, tokens) {
   return { score, why };
 }
 
-const WHY = ['title', 'author', 'tag', 'shelf', 'details', 'remarks', 'description', 'chapter'];
+const WHY = ['Titel', 'Autor', 'Tag', 'Regal', 'Details', 'Anmerkungen', 'Beschreibung', 'Kapitel'];
 
 /** scope: {deptId} or {colId} to search a single room or collection. */
 export function searchLibrary(q, scope = {}) {

@@ -118,17 +118,17 @@ export function formatBytes(n) {
 
 export function formatDate(ts) {
   if (!ts) return '';
-  return new Date(ts).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
+  return new Date(ts).toLocaleDateString('de-DE', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export function timeAgo(ts) {
-  if (!ts) return 'never';
+  if (!ts) return 'noch nie';
   const s = Math.round((Date.now() - ts) / 1000);
-  if (s < 45) return 'just now';
+  if (s < 45) return 'gerade eben';
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} min ago`;
+  if (m < 60) return `vor ${m} Min.`;
   const hr = Math.round(m / 60);
-  if (hr < 24) return `${hr} h ago`;
+  if (hr < 24) return `vor ${hr} Std.`;
   return formatDate(ts);
 }
 

@@ -1,73 +1,74 @@
-// Document kinds, bindings and the palettes that make each kind look different on the shelf.
+// Document kinds, note kinds, formats and colours.
 
 export const KINDS = [
-  { id: 'book', label: 'Book', group: 'Books', binding: 'leather' },
-  { id: 'paper', label: 'Scientific paper', group: 'Scientific literature', binding: 'journal' },
-  { id: 'article', label: 'Research article', group: 'Scientific literature', binding: 'journal' },
-  { id: 'journal', label: 'Journal issue', group: 'Scientific literature', binding: 'journal' },
-  { id: 'study', label: 'Study or report', group: 'Scientific literature', binding: 'journal' },
-  { id: 'review', label: 'Literature review', group: 'Scientific literature', binding: 'journal' },
-  { id: 'lecture', label: 'Lecture script', group: 'University & studies', binding: 'binder' },
-  { id: 'material', label: 'Course material', group: 'University & studies', binding: 'binder' },
-  { id: 'assignment', label: 'Assignment', group: 'University & studies', binding: 'binder' },
-  { id: 'slides', label: 'Presentation', group: 'University & studies', binding: 'binder' },
-  { id: 'exam', label: 'Exam summary', group: 'University & studies', binding: 'binder' },
-  { id: 'notebook', label: 'Notebook', group: 'Personal papers', binding: 'notebook' },
-  { id: 'thoughts', label: 'Philosophical thoughts', group: 'Personal papers', binding: 'notebook' },
-  { id: 'theory', label: 'Own theory', group: 'Personal papers', binding: 'manuscript' },
-  { id: 'summary', label: 'Summary', group: 'Personal papers', binding: 'notebook' },
-  { id: 'quotes', label: 'Quotation collection', group: 'Personal papers', binding: 'notebook' },
-  { id: 'manuscript', label: 'Manuscript', group: 'Personal papers', binding: 'manuscript' },
-  { id: 'other', label: 'Other document', group: 'Other', binding: 'cloth' },
+  { id: 'book', label: 'Buch', group: 'Bücher', binding: 'leather' },
+  { id: 'paper', label: 'Wissenschaftliches Paper', group: 'Wissenschaftliche Literatur', binding: 'journal' },
+  { id: 'article', label: 'Fachartikel', group: 'Wissenschaftliche Literatur', binding: 'journal' },
+  { id: 'journal', label: 'Zeitschriftenheft', group: 'Wissenschaftliche Literatur', binding: 'journal' },
+  { id: 'study', label: 'Studie oder Bericht', group: 'Wissenschaftliche Literatur', binding: 'journal' },
+  { id: 'review', label: 'Literaturübersicht', group: 'Wissenschaftliche Literatur', binding: 'journal' },
+  { id: 'lecture', label: 'Vorlesungsskript', group: 'Uni & Studium', binding: 'binder' },
+  { id: 'material', label: 'Lernmaterial', group: 'Uni & Studium', binding: 'binder' },
+  { id: 'assignment', label: 'Aufgabe', group: 'Uni & Studium', binding: 'binder' },
+  { id: 'slides', label: 'Präsentation', group: 'Uni & Studium', binding: 'binder' },
+  { id: 'exam', label: 'Prüfungszusammenfassung', group: 'Uni & Studium', binding: 'binder' },
+  { id: 'notebook', label: 'Notizbuch', group: 'Persönliches', binding: 'notebook' },
+  { id: 'thoughts', label: 'Philosophische Gedanken', group: 'Persönliches', binding: 'notebook' },
+  { id: 'theory', label: 'Eigene Theorie', group: 'Persönliches', binding: 'manuscript' },
+  { id: 'summary', label: 'Zusammenfassung', group: 'Persönliches', binding: 'notebook' },
+  { id: 'quotes', label: 'Zitatsammlung', group: 'Persönliches', binding: 'notebook' },
+  { id: 'manuscript', label: 'Manuskript', group: 'Persönliches', binding: 'manuscript' },
+  { id: 'other', label: 'Sonstiges Dokument', group: 'Sonstiges', binding: 'cloth' },
 ];
 
 export const KIND = Object.fromEntries(KINDS.map((k) => [k.id, k]));
-export const kindLabel = (id) => KIND[id]?.label || 'Document';
+export const kindLabel = (id) => KIND[id]?.label || 'Dokument';
 export const bindingOf = (id) => (KIND[id] || KIND.other).binding;
-
 export const KIND_GROUPS = [...new Set(KINDS.map((k) => k.group))];
 
 export const NOTE_KINDS = [
-  { id: 'note', label: 'Note' },
-  { id: 'summary', label: 'Summary' },
-  { id: 'thought', label: 'Own thought' },
-  { id: 'theory', label: 'Theory' },
-  { id: 'quote', label: 'Quotation' },
+  { id: 'note', label: 'Notiz', plural: 'Notizen', icon: 'penLine' },
+  { id: 'summary', label: 'Zusammenfassung', plural: 'Zusammenfassungen', icon: 'fileText' },
+  { id: 'thought', label: 'Gedanke', plural: 'Gedanken', icon: 'bulb' },
+  { id: 'theory', label: 'Theorie', plural: 'Theorien', icon: 'sparkles' },
+  { id: 'quote', label: 'Zitat', plural: 'Zitate', icon: 'quote' },
 ];
-export const noteKindLabel = (id) => NOTE_KINDS.find((k) => k.id === id)?.label || 'Note';
+export const noteKindLabel = (id) => NOTE_KINDS.find((k) => k.id === id)?.label || 'Notiz';
+export const noteKind = (id) => NOTE_KINDS.find((k) => k.id === id) || NOTE_KINDS[0];
 
 export const FORMATS = {
   epub: 'EPUB',
   pdf: 'PDF',
-  text: 'Written in the library',
-  file: 'Stored file',
-  none: 'Catalogue entry, no file',
+  text: 'Eigener Text',
+  file: 'Datei',
+  none: 'Nur Katalogeintrag',
 };
 
-/** Leather colours a room can be dressed in. */
+/** Shelf colours (stored on each shelf, shown as a small dot). */
 export const LEATHERS = [
-  { name: 'Oxblood', hex: '#5b1a1a' },
-  { name: 'Bottle green', hex: '#1f3b2c' },
-  { name: 'Aubergine', hex: '#3e2338' },
-  { name: 'Prussian blue', hex: '#1d2a44' },
-  { name: 'Umber', hex: '#4b2e1a' },
-  { name: 'Verdigris', hex: '#23393b' },
-  { name: 'Ochre', hex: '#6b4a1c' },
-  { name: 'Slate', hex: '#2f3438' },
-  { name: 'Claret', hex: '#4a1630' },
-  { name: 'Moss', hex: '#3a3f1f' },
+  { name: 'Ochsenblut', hex: '#8a3b2e' },
+  { name: 'Flaschengrün', hex: '#3f6b52' },
+  { name: 'Aubergine', hex: '#6b4560' },
+  { name: 'Preußischblau', hex: '#3e5874' },
+  { name: 'Umbra', hex: '#7a5434' },
+  { name: 'Grünspan', hex: '#3f706c' },
+  { name: 'Ocker', hex: '#a07432' },
+  { name: 'Schiefer', hex: '#5a6168' },
+  { name: 'Weinrot', hex: '#7c3048' },
+  { name: 'Moos', hex: '#66703a' },
 ];
 
-/** Colours a spine can be bound in, per binding. */
+/** Generated covers: warm, muted cloth colours. */
+export const COVER_COLORS = ['#8c4a32', '#5e6b4b', '#3f5566', '#7a5a2f', '#6b3f55', '#2f5d58', '#9a6a3a', '#4b4f6b', '#7d3b3b', '#56604a', '#a0552a', '#3b4a3f'];
+
+// Kept for older stored records (spine colours chosen in earlier versions).
 export const PALETTE = {
-  leather: ['#5b1a1a', '#4a1616', '#6a2a1c', '#1f3b2c', '#173022', '#1d2a44', '#18223a', '#3e2338', '#4b2e1a', '#2a1d14', '#14110f', '#3a2e1e', '#5a4524', '#2b3a3a', '#6b3a1e', '#4a1630'],
-  journal: ['#3d4a52', '#4a5446', '#5a4f3a', '#463c4a', '#3b4656', '#5b5244', '#2f3b3b', '#4f3f33'],
-  binder: ['#3a2f26', '#2e3540', '#40302a', '#33392c', '#3b2b2f'],
-  notebook: ['#6b5a3e', '#4f3b2a', '#3f3328', '#5d4a35', '#2f2a24', '#54412c'],
-  manuscript: ['#d8c6a0', '#cdb98f', '#e0d0ac', '#d2bf96'],
-  cloth: ['#4a3b2b', '#3c3a33', '#51443a', '#3a3f45'],
+  leather: ['#5b1a1a', '#1f3b2c', '#1d2a44', '#3e2338', '#4b2e1a', '#2b3a3a', '#6b3a1e', '#4a1630'],
+  journal: ['#3d4a52', '#4a5446', '#5a4f3a', '#463c4a', '#3b4656'],
+  binder: ['#3a2f26', '#2e3540', '#40302a'],
+  notebook: ['#6b5a3e', '#4f3b2a', '#5d4a35'],
+  manuscript: ['#d8c6a0', '#cdb98f'],
+  cloth: ['#4a3b2b', '#3c3a33'],
 };
-
-export const ALL_SPINE_COLORS = [...new Set([...PALETTE.leather, ...PALETTE.journal, ...PALETTE.notebook, ...PALETTE.manuscript])];
-
-export const EMBLEMS = ['owl', 'quill', 'key', 'globe', 'column', 'mortarboard', 'lamp', 'book', 'scroll', 'hourglass', 'laurel', 'compass', 'lyre', 'crown'];
+export const ALL_SPINE_COLORS = COVER_COLORS;
+export const EMBLEMS = ['owl', 'quill', 'key', 'globe', 'column', 'mortarboard', 'lamp', 'book'];
