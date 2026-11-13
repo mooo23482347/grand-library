@@ -56,7 +56,7 @@ export async function epubSource(doc) {
           return spine >= 0 ? { spine, anchor: href.includes('#') ? href.split('#')[1] : null } : null;
         },
       });
-      [...el.querySelectorAll('p')].find((x) => dropCapWorthy(x.textContent))?.classList.add('first');
+      { const p0 = el.querySelector('p'); if (p0 && dropCapWorthy(p0.textContent)) p0.classList.add('first'); } // opening paragraph only
       return el;
     },
     dispose() {
@@ -107,7 +107,7 @@ export async function textSource(doc) {
     async render() {
       const el = h('div', { html: renderMarkdown(body, { headingIds: true }) });
       el.querySelectorAll('[id^="h-"]').forEach((x) => (x.id = `c0-${x.id}`));
-      [...el.querySelectorAll('p')].find((x) => dropCapWorthy(x.textContent))?.classList.add('first');
+      { const p0 = el.querySelector('p'); if (p0 && dropCapWorthy(p0.textContent)) p0.classList.add('first'); } // opening paragraph only
       return el;
     },
     setText(t) {
@@ -145,11 +145,13 @@ export function reflowSource(doc, rec) {
         t.textContent = ch.title;
         box.append(t);
       }
-      let first = true;
+      // The initial belongs to the chapter's opening paragraph only, never mid-chapter
+      // and not to the continuation parts of a long chapter ("… (2)").
+      let first = !/ \(\d+\)$/.test(ch.title);
       ch.blocks.forEach((b, k) => {
         const el = document.createElement(b.t === 'h' ? (b.l <= 1 ? 'h2' : b.l === 2 ? 'h3' : 'h4') : 'p');
-        if (b.t !== 'h' && first && dropCapWorthy(b.x)) {
-          el.className = 'first';
+        if (b.t !== 'h' && first) {
+          if (dropCapWorthy(b.x)) el.className = 'first';
           first = false;
         }
         el.dataset.b = k;

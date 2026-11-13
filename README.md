@@ -171,6 +171,7 @@ Es ist nirgends eine Kreditkarte hinterlegt.
 
 - Bibliotheken mit festen Versionen von jsDelivr: Dexie 4.0.8, pdf.js 4.10.38, JSZip 3.10.1, supabase-js 2.45.4.
 - Service Worker (`sw.js`): App-Dateien „Netz zuerst“, offline aus dem Zwischenspeicher. Neue Dateien in `SHELL` eintragen und `VERSION` erhöhen.
+- Nach einem Deploy kann es bis zu 10 Minuten dauern, bis jedes Gerät die neue Version lädt (GitHub Pages erlaubt Browsern so lange zu cachen). Sofort: am PC Strg+Umschalt+R, am iPhone die Web-App schließen und neu öffnen.
 - EPUB-Kapitel werden über eine Allow-List neu aufgebaut: Skripte, Styles, Formulare und Event-Handler aus Büchern erreichen die Seite nie.
 - Kostenlose Bücher kommen aus dem Internet Archive (Suche direkt im Browser). Lädt der Archive-Server eine Datei nicht direkt herunter, öffnet die App die Seite des Buchs, von wo man die Datei speichert und hinzufügt.
 
