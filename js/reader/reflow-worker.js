@@ -87,7 +87,7 @@ function analyse({ outline = [], pages: count }) {
 
   let totalChars = 0;
   for (const p of pages) for (const l of p.lines) totalChars += l.text.length;
-  if (totalChars < Math.max(200, count * 80)) return { v: 2, status: 'notext', pages: count, chars: totalChars, chapters: [] };
+  if (totalChars < Math.max(200, count * 80)) return { v: 3, status: 'notext', pages: count, chars: totalChars, chapters: [] };
 
   removeRunningHeads(pages);
   for (const p of pages) orderColumns(p);
@@ -116,7 +116,7 @@ function analyse({ outline = [], pages: count }) {
   };
 
   // ---------------- blocks
-  const VERSION = 2; // keep in step with REFLOW_VERSION in reflow.js
+  const VERSION = 3; // keep in step with REFLOW_VERSION in reflow.js
   const blocks = [];
   let expectTitle = false; // the line after "Fünftes Kapitel" is usually the chapter's name
   const notes = [];
@@ -226,9 +226,13 @@ const NUM = '(?:\\d{1,3}|[IVXLC]{1,7})';
 const DIV_CHAPTER = new RegExp(`^(?:\\p{L}+\\s+|${NUM}\\.?\\s+)?(?:kapitel|chapter|chapitre|capitolo|capítulo)(?:\\s+(?:${NUM}|\\p{L}+))?\\.?$`, 'iu');
 const DIV_PART = new RegExp(`^(?:\\p{L}+\\s+|${NUM}\\.?\\s+)?(?:abschnitt|teil|buch|part|book|livre|parte)(?:\\s+(?:${NUM}|\\p{L}+))?[.:]?$`, 'iu');
 const DIV_FRONT = /^(?:vorwort|vorrede|nachwort|einleitung|einführung|prolog|epilog|anhang|nachbemerkung|preface|foreword|introduction|afterword|appendix|prologue|epilogue)\b[^.,;]{0,50}$/i;
+// German ordinals ("Vierundzwanzigstes"), to accept the common misprint "… Kapital" for "Kapitel"
+const DE_ORDINAL = /^(?:erst|zweit|dritt|viert|fünft|sechst|sieb(?:en)?t|acht|neunt|zehnt|elft|zwölft|\p{L}+zehnt|\p{L}+zigst|\p{L}+ßigst|hundertst)e[sr]?$/iu;
 function divisionKind(text) {
   const t = text.trim();
   if (t.length <= 40 && DIV_CHAPTER.test(t)) return 'ch';
+  const typo = t.match(/^(\p{L}+)\s+Kapital\.?$/u);
+  if (typo && DE_ORDINAL.test(typo[1])) return 'ch';
   if (t.length <= 40 && DIV_PART.test(t)) return 'part';
   if (DIV_FRONT.test(t)) return 'front';
   return null;
