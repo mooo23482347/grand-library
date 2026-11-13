@@ -415,6 +415,10 @@
 
 /* ------------------------------------------------------------ edit mode */
 
+.edit-shelves {
+  max-width: 760px;
+}
+
 .edit-list .cell {
   gap: 12px;
 }
@@ -475,6 +479,7 @@
   flex: none;
   border-radius: 3px;
   background: var(--shelf-color, var(--accent));
+  box-shadow: inset 0 0 0 1px var(--sep);
 }
 .pick-shelf {
   display: inline-flex;

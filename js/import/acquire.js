@@ -283,6 +283,9 @@ async function fetchFile(url, name) {
   return new File([blob], name, { type });
 }
 
+const LANG_NAMES = { eng: 'Englisch', en: 'Englisch', english: 'Englisch', ger: 'Deutsch', deu: 'Deutsch', de: 'Deutsch', german: 'Deutsch', fre: 'Französisch', fra: 'Französisch', french: 'Französisch', spa: 'Spanisch', spanish: 'Spanisch', ita: 'Italienisch', italian: 'Italienisch', lat: 'Latein', latin: 'Latein', grc: 'Altgriechisch', gre: 'Griechisch', rus: 'Russisch', dut: 'Niederländisch', nld: 'Niederländisch' };
+const langName = (l) => (l ? LANG_NAMES[String(l).toLowerCase()] || l : '');
+
 function freeBooks(chosen) {
   const results = h('div');
   let timer = null;
@@ -301,7 +304,7 @@ function freeBooks(chosen) {
         const docs = data.response?.docs || [];
         results.replaceChildren(
           docs.length
-            ? group({ head: `${docs.length} Treffer im Internet Archive`, rows: docs.map((d) => cell({ title: [].concat(d.title)[0], sub: [[].concat(d.creator || [])[0], d.year, [].concat(d.language || [])[0]].filter(Boolean).join(' · '), chevron: true, onClick: () => archiveItem(d, chosen) })) })
+            ? group({ head: `${docs.length} Treffer im Internet Archive`, rows: docs.map((d) => cell({ title: [].concat(d.title)[0], sub: [[].concat(d.creator || [])[0], d.year, langName([].concat(d.language || [])[0])].filter(Boolean).join(' · '), chevron: true, onClick: () => archiveItem(d, chosen) })) })
             : h('p', { class: 'group-foot' }, 'Nichts gefunden.'),
         );
       } catch {

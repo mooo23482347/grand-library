@@ -68,15 +68,7 @@ export function renderNotes([noteId], query) {
     groups.get(key).items.push(item);
   };
 
-  if (isMarks) {
-    for (const x of state.highlights) {
-      if (query.doc && x.documentId !== query.doc) continue;
-      if (scopeDocs && !scopeDocs.has(x.documentId)) continue;
-      if (tokens.length && !hit(x.text)) continue;
-      const d = idx.doc.get(x.documentId);
-      add(x.documentId, d?.title || 'Gelöschtes Buch', d ? docHref(d.id) : null, cell({ title: `„${x.text.slice(0, 140)}${x.text.length > 140 ? '…' : ''}“`, sub: x.chapter || '', href: `#/read/${x.documentId}?loc=${encodeURIComponent(JSON.stringify(x.loc))}`, wrap: true, className: `mark-cell c-${x.color || 'amber'}` }));
-    }
-  } else {
+  if (!isMarks) {
     const notes = [...state.notes].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     for (const n of notes) {
       if (query.kind && n.kind !== query.kind) continue;
@@ -87,6 +79,18 @@ export function renderNotes([noteId], query) {
       const k = noteKind(n.kind);
       const preview = (n.quote || n.body || '').replace(/[#>*[\]_]/g, '').trim();
       add(d ? d.id : n.sourceTitle ? `src:${n.sourceTitle}` : 'free', d ? d.title : n.sourceTitle ? `${n.sourceTitle} (gelöscht)` : 'Ohne Buch', d ? docHref(d.id) : null, cell({ title: noteTitle(n), sub: [k.label, n.chapter, preview && preview !== noteTitle(n) ? preview.slice(0, 80) : ''].filter(Boolean).join(' · '), href: `#/scriptorium/${n.id}${qs(query, {})}`, icon: k.icon, tint: 'var(--accent)' }));
+    }
+  }
+  // Marked passages: their own filter, and part of "Alle" unless a note already carries them.
+  if (isMarks || !query.kind) {
+    const carried = new Set(state.notes.map((n) => n.highlightId).filter(Boolean));
+    for (const x of state.highlights) {
+      if (!isMarks && carried.has(x.id)) continue;
+      if (query.doc && x.documentId !== query.doc) continue;
+      if (scopeDocs && !scopeDocs.has(x.documentId)) continue;
+      if (tokens.length && !hit(`${x.text} ${x.chapter || ''}`)) continue;
+      const d = idx.doc.get(x.documentId);
+      add(x.documentId, d?.title || 'Gelöschtes Buch', d ? docHref(d.id) : null, cell({ title: `„${x.text.slice(0, 140)}${x.text.length > 140 ? '…' : ''}“`, sub: ['Markierung', x.chapter].filter(Boolean).join(' · '), href: `#/read/${x.documentId}?loc=${encodeURIComponent(JSON.stringify(x.loc))}`, wrap: true, icon: isMarks ? null : 'highlighter', tint: 'var(--mk)', className: `${isMarks ? 'mark-cell' : ''} c-${x.color || 'amber'}` }));
     }
   }
 
@@ -102,7 +106,7 @@ export function renderNotes([noteId], query) {
     return page;
   }
   for (const g of groups.values()) {
-    page.append(group({ head: g.title, headAction: g.href ? h('a', { class: 'btn', href: g.href }, 'Buch') : null, rows: g.items, icons: !isMarks }));
+    page.append(group({ head: g.title, headAction: g.href ? h('a', { class: 'btn', href: g.href }, 'Buch') : null, rows: g.items, icons: !isMarks, className: 'book-group' }));
   }
   return page;
 }

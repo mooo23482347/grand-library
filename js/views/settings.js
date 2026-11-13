@@ -44,7 +44,7 @@ function sections(syncBox, deviceBox) {
       head: 'Darstellung',
       icons: true,
       rows: [
-        h('div', { class: 'cell' }, h('span', { class: 'cell-icon', style: { '--tint': '#7a6a5a' }, html: icon('sun') }), h('span', { class: 'cell-main' }, h('span', { class: 'cell-title' }, 'Erscheinungsbild')), segmented([{ value: 'auto', label: 'Auto' }, { value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }], getTheme(), (v) => setTheme(v), { label: 'Erscheinungsbild' })),
+        h('div', { class: 'cell' }, h('span', { class: 'cell-icon', style: { '--tint': '#7a6a5a' }, html: icon('sun') }), h('span', { class: 'cell-main' }, h('span', { class: 'cell-title' }, 'Design')), segmented([{ value: 'auto', label: 'Auto' }, { value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }], getTheme(), (v) => setTheme(v), { label: 'Erscheinungsbild' })),
         cell({ title: 'Papier', detail: skinOf(p.skin).name, icon: 'file', tint: '#b08a5a', chevron: true, onClick: () => choose('Papier', SKINS.map((s) => ({ value: s.id, label: s.name })), p.skin, (v) => setReaderPrefs({ skin: v }).then(rerender)) }),
       ],
     }),
@@ -56,7 +56,8 @@ function sections(syncBox, deviceBox) {
         h('div', { class: 'cell' }, h('span', { class: 'cell-icon', style: { '--tint': '#5e7a63' }, html: icon('bookOpen') }), h('span', { class: 'cell-main' }, h('span', { class: 'cell-title' }, 'Lesemodus')), segmented([{ value: 'pages', label: 'Seiten' }, { value: 'scroll', label: 'Scrollen' }], p.mode, (v) => setReaderPrefs({ mode: v }), { label: 'Lesemodus' })),
         cell({ title: 'Schrift', detail: FONTS.find((f) => f.id === p.font)?.name, icon: 'type', tint: '#6b5d8a', chevron: true, onClick: () => choose('Schrift', FONTS.map((f) => ({ value: f.id, label: f.name, style: { fontFamily: f.css } })), p.font, (v) => setReaderPrefs({ font: v }).then(rerender)) }),
         switchCell({ title: 'Verzierungen', sub: 'Ornamente, Lesebändchen und kleine Überraschungen', checked: p.ornaments, icon: 'sparkles', tint: '#c08a3e', onChange: (v) => setReaderPrefs({ ornaments: v }) }),
-        switchCell({ title: 'Doppelseite am großen Bildschirm', checked: p.spread, icon: 'spread', tint: '#4f6f8a', onChange: (v) => setReaderPrefs({ spread: v }) }),
+        // a device setting: only offered where a double page can actually appear
+        matchMedia('(min-width: 900px)').matches ? switchCell({ title: 'Doppelseite', sub: 'Zwei Seiten nebeneinander, wenn genug Platz ist', checked: p.spread, icon: 'spread', tint: '#4f6f8a', onChange: (v) => setReaderPrefs({ spread: v }) }) : null,
       ],
     }),
     group({
