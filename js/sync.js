@@ -73,7 +73,7 @@ export async function initSync() {
     client.auth.onAuthStateChange((_e, session) => setSession(session));
   } catch (e) {
     syncState.status = navigator.onLine ? 'error' : 'offline';
-    syncState.error = navigator.onLine ? `The sync service could not be loaded: ${e.message}` : null;
+    syncState.error = navigator.onLine ? `Die Synchronisierung konnte nicht geladen werden: ${e.message}` : null;
     emit();
   }
   setRemoteFetcher(fetchRemote);
@@ -98,8 +98,8 @@ function setSession(session) {
 export async function configureSync(url, anonKey) {
   url = String(url || '').trim().replace(/\/+$/, '');
   anonKey = String(anonKey || '').trim();
-  if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(url)) throw new Error('The project URL looks like https://abcdefgh.supabase.co');
-  if (anonKey.split('.').length !== 3 && !anonKey.startsWith('sb_publishable_')) throw new Error('Use the public key: “sb_publishable_…” or the legacy anon key that starts with “eyJ”.');
+  if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(url)) throw new Error('Die Projektadresse sieht so aus: https://abcdefgh.supabase.co');
+  if (anonKey.split('.').length !== 3 && !anonKey.startsWith('sb_publishable_')) throw new Error('Bitte den öffentlichen Schlüssel verwenden („sb_publishable_…“).');
   await setSetting('sync.config', { url, anonKey });
   location.reload();
 }
@@ -115,9 +115,9 @@ export async function forgetSyncConfig() {
 }
 
 export async function signIn(email, password) {
-  if (!client) throw new Error('Sync is not set up on this device yet.');
+  if (!client) throw new Error('Die Synchronisierung ist auf diesem Gerät noch nicht eingerichtet.');
   const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-  if (error) throw new Error(/invalid/i.test(error.message) ? 'Email or password is not correct.' : error.message);
+  if (error) throw new Error(/invalid/i.test(error.message) ? 'E-Mail oder Passwort stimmt nicht.' : error.message);
   setSession(data.session);
   await syncNow();
 }
@@ -169,9 +169,9 @@ export async function syncNow() {
       else {
         syncState.status = 'error';
         syncState.error = /fetch|network|load failed/i.test(msg)
-          ? 'The sync server cannot be reached. A free Supabase project is paused after a week without use: open supabase.com, choose the project and click “Restore”.'
+          ? 'Der Server ist nicht erreichbar. Ein kostenloses Supabase-Projekt pausiert nach einer Woche ohne Nutzung: supabase.com öffnen, das Projekt wählen und „Restore“ klicken.'
           : /relation .* does not exist|gl_records/i.test(msg)
-            ? 'The cloud tables are missing. Run supabase/schema.sql in the SQL editor of your Supabase project.'
+            ? 'In der Cloud fehlen die Tabellen (supabase/schema.sql im SQL-Editor ausführen).'
             : msg;
       }
     } finally {
@@ -322,18 +322,18 @@ async function uploadBlobs() {
   for (const f of files) {
     if (f.size > FREE_LIMITS.fileBytes) {
       await db.files.update(f.id, { localOnly: 'too-large' });
-      syncState.warning = `“${f.name}” is larger than 50 MB, the limit of a free Supabase project. It stays on this device only.`;
+      syncState.warning = `„${f.name}“ ist größer als 50 MB (Grenze des Gratis-Tarifs) und bleibt nur auf diesem Gerät.`;
       continue;
     }
     if (usage.files + f.size > FREE_LIMITS.storageBytes * 0.98) {
-      syncState.warning = 'The cloud shelf is full (1 GB, the free limit). New files stay on this device only. No paid plan is switched on.';
+      syncState.warning = 'Der Cloud-Speicher ist voll (1 GB, Gratis-Grenze). Neue Dateien bleiben nur auf diesem Gerät. Es wird kein bezahlter Tarif aktiviert.';
       break;
     }
     const { error } = await client.storage.from(BUCKET).upload(`${userId}/files/${f.id}`, f.blob, { upsert: true, contentType: f.mime || 'application/octet-stream' });
     if (error && !/exists|duplicate/i.test(error.message)) {
       if (/size|large|quota|exceed/i.test(error.message)) {
         await db.files.update(f.id, { localOnly: 'rejected' });
-        syncState.warning = `The cloud refused “${f.name}” (${error.message}). It stays on this device only.`;
+        syncState.warning = `Die Cloud hat „${f.name}“ abgelehnt (${error.message}). Die Datei bleibt nur auf diesem Gerät.`;
         continue;
       }
       throw new Error(error.message);
@@ -357,8 +357,8 @@ export async function checkCloudCapacity(bytes) {
   const u = await getUsage(true).catch(() => null);
   if (!u) return null;
   const after = u.files + bytes;
-  if (after > FREE_LIMITS.storageBytes * 0.98) return { warning: 'These files would exceed the 1 GB of free cloud storage. They are kept on this device; volumes that do not fit are not synced.' };
-  if (after > FREE_LIMITS.storageBytes * 0.85) return { warning: `The cloud shelf is ${Math.round((after / FREE_LIMITS.storageBytes) * 100)}% full after this import (free limit 1 GB).` };
+  if (after > FREE_LIMITS.storageBytes * 0.98) return { warning: 'Diese Dateien würden die 1 GB Gratis-Speicher überschreiten. Sie bleiben auf diesem Gerät; was nicht passt, wird nicht synchronisiert.' };
+  if (after > FREE_LIMITS.storageBytes * 0.85) return { warning: `Nach diesem Import ist der Cloud-Speicher zu ${Math.round((after / FREE_LIMITS.storageBytes) * 100)} % voll (Gratis-Grenze 1 GB).` };
   return null;
 }
 

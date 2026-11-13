@@ -1,192 +1,94 @@
-// The card catalogue: one search field for the whole library.
+// Suche: one field for the whole library, including the full text of the books.
 
 import { h, fromHTML, debounce } from '../util.js';
 import { idx, docHref, noteTitle, placementsOf } from '../store.js';
-import { kindLabel, noteKindLabel } from '../kinds.js';
+import { kindLabel, noteKind } from '../kinds.js';
 import { searchLibrary, searchFullText, fulltextCoverage } from '../search.js';
 import { icon } from '../ui/icons.js';
-import { spineSpec } from './shelf.js';
+import { pageHeader, searchField, group, cell, emptyState } from '../ui/controls.js';
+import { coverEl } from './covers.js';
 
 let running = null;
 
 export function renderSearch(params, query) {
-  const q = query.q || '';
-  const roomId = query.room || '';
-  const input = h('input', {
-    class: 'search-big',
-    type: 'search',
-    value: q,
-    placeholder: 'Title, author, tag, room, a phrase from a book…',
-    'aria-label': 'Search the library',
-    'data-fk': 'search-page',
-    autocomplete: 'off',
-  });
-  const scopeSel = h(
-    'select',
-    { class: 'search-scope', 'aria-label': 'Where to search' },
-    h('option', { value: '' }, 'The whole library'),
-    idx.depts.map((d) => h('option', { value: d.id, selected: d.id === roomId ? true : null }, d.name)),
-  );
   const results = h('div', { class: 'search-results' });
-  const fullWrap = h('section', { class: 'sr-group sr-fulltext' });
+  const scopeSel = h('select', { class: 'scope-select', 'aria-label': 'Wo suchen' }, h('option', { value: '' }, 'Überall'), idx.depts.map((d) => h('option', { value: d.id, selected: d.id === query.room ? true : null }, d.name)));
 
+  let q = query.q || '';
   const go = debounce(() => {
-    const v = input.value.trim();
-    const params = new URLSearchParams();
-    if (v) params.set('q', v);
-    if (scopeSel.value) params.set('room', scopeSel.value);
-    history.replaceState(null, '', `#/search${params.toString() ? `?${params}` : ''}`);
-    draw(v, scopeSel.value);
-  }, 220);
-  input.addEventListener('input', go);
+    const p = new URLSearchParams();
+    if (q.trim()) p.set('q', q.trim());
+    if (scopeSel.value) p.set('room', scopeSel.value);
+    history.replaceState(null, '', `#/search${p.toString() ? `?${p}` : ''}`);
+    draw(q.trim(), scopeSel.value);
+  }, 200);
   scopeSel.addEventListener('change', go);
 
   function draw(v, room) {
     running?.abort();
     results.replaceChildren();
-    fullWrap.replaceChildren();
     if (!v) {
-      results.append(h('p', { class: 'search-hint' }, 'Search titles, authors, descriptions, tags, rooms and collections, your notes and summaries, the passages you marked, and the full text of every volume on this device.'));
+      results.append(emptyState({ icon: 'search', title: 'Bibliothek durchsuchen', text: 'Titel, Autoren, Regale, Tags, deine Notizen und Markierungen – und der Text aller Bücher auf diesem Gerät.' }));
       return;
     }
     const r = searchLibrary(v, room ? { deptId: room } : {});
-    const total = r.docs.length + r.places.length + r.notes.length + r.marks.length + r.tags.length;
-
     if (r.places.length || r.tags.length) {
-      results.append(
-        h(
-          'section',
-          { class: 'sr-group' },
-          h('h2', { class: 'sr-h' }, 'Rooms, collections and tags'),
-          h(
-            'div',
-            { class: 'sr-places' },
-            r.places.slice(0, 12).map((p) => h('a', { class: `sr-place ${p.type}`, href: p.href }, h('span', { class: 'sr-place-kind' }, p.type === 'room' ? 'Room' : 'Collection'), h('span', null, p.label))),
-            r.tags.slice(0, 12).map((t) => h('a', { class: 'sr-place tag', href: `#/tag/${t.tag.id}` }, h('span', { class: 'sr-place-kind' }, 'Tag'), h('span', null, `${t.tag.name} (${t.count})`))),
-          ),
-        ),
-      );
+      results.append(group({ head: 'Regale & Tags', icons: true, rows: [
+        ...r.places.slice(0, 8).map((p) => cell({ title: p.label, sub: p.type === 'room' ? 'Regal' : 'Sammlung', href: p.href, icon: p.type === 'room' ? 'library' : 'folder', tint: 'var(--text-3)' })),
+        ...r.tags.slice(0, 8).map((t) => cell({ title: t.tag.name, sub: `Tag · ${t.count}`, href: `#/tag/${t.tag.id}`, icon: 'tag', tint: 'var(--text-3)' })),
+      ] }));
     }
-
     if (r.docs.length) {
-      results.append(
-        h(
-          'section',
-          { class: 'sr-group' },
-          h('h2', { class: 'sr-h' }, `Volumes · ${r.docs.length}`),
-          h(
-            'ol',
-            { class: 'sr-docs' },
-            r.docs.slice(0, 120).map(({ doc, why }) => {
-              const s = spineSpec(doc);
-              const where = placementsOf(doc.id).map((p) => p.label);
-              return h(
-                'li',
-                null,
-                h(
-                  'a',
-                  { class: 'sr-doc', href: docHref(doc.id) },
-                  h('span', { class: `sr-spine b-${s.binding}`, style: { '--c': s.color } }),
-                  h(
-                    'span',
-                    { class: 'sr-doc-text' },
-                    h('span', { class: 'sr-title' }, doc.title),
-                    h('span', { class: 'sr-meta' }, [doc.author, kindLabel(doc.kind), doc.year].filter(Boolean).join(' · ')),
-                    h('span', { class: 'sr-where' }, where.length ? where.join('  ·  ') : 'On the returns table'),
-                    why.length && !why.includes('title') ? h('span', { class: 'sr-why' }, `Found in: ${why.join(', ')}`) : null,
-                  ),
-                ),
-              );
-            }),
-          ),
-        ),
-      );
+      results.append(group({ head: `Bücher · ${r.docs.length}`, rows: r.docs.slice(0, 80).map(({ doc, why }) => h('a', { class: 'cell doc-cell', href: docHref(doc.id) }, coverEl(doc, 'mini'), h('span', { class: 'cell-main' }, h('span', { class: 'cell-title' }, doc.title), h('span', { class: 'cell-sub' }, [doc.author, kindLabel(doc.kind), doc.year].filter(Boolean).join(' · ')), h('span', { class: 'cell-sub' }, why.length && !why.includes('Titel') ? `Gefunden in: ${why.join(', ')}` : placementsOf(doc.id).map((p) => p.label).join(' · ') || 'Ohne Regal')), fromHTML(icon('next', 'cell-chevron')))) }));
     }
-
     if (r.notes.length || r.marks.length) {
-      results.append(
-        h(
-          'section',
-          { class: 'sr-group' },
-          h('h2', { class: 'sr-h' }, `From the Scriptorium · ${r.notes.length + r.marks.length}`),
-          h(
-            'ul',
-            { class: 'sr-notes' },
-            r.notes.slice(0, 60).map(({ note }) => {
-              const d = note.documentId ? idx.doc.get(note.documentId) : null;
-              return h('li', null, h('a', { class: 'sr-note', href: `#/scriptorium/${note.id}` }, h('span', { class: 'sr-note-kind' }, noteKindLabel(note.kind)), h('span', { class: 'sr-title' }, noteTitle(note)), d ? h('span', { class: 'sr-meta' }, `on ${d.title}${note.chapter ? ` · ${note.chapter}` : ''}`) : null));
-            }),
-            r.marks.slice(0, 40).map(({ mark }) => {
-              const d = idx.doc.get(mark.documentId);
-              return h('li', null, h('a', { class: 'sr-note mark', href: `#/read/${mark.documentId}?loc=${encodeURIComponent(JSON.stringify(mark.loc))}` }, h('span', { class: 'sr-note-kind' }, 'Marked passage'), h('span', { class: 'sr-quote' }, `“${mark.text.slice(0, 220)}${mark.text.length > 220 ? '…' : ''}”`), d ? h('span', { class: 'sr-meta' }, d.title) : null));
-            }),
-          ),
-        ),
-      );
+      results.append(group({ head: `Notizen · ${r.notes.length + r.marks.length}`, icons: true, rows: [
+        ...r.notes.slice(0, 40).map(({ note }) => { const k = noteKind(note.kind); const d = note.documentId ? idx.doc.get(note.documentId) : null; return cell({ title: noteTitle(note), sub: [k.label, d?.title].filter(Boolean).join(' · '), href: `#/scriptorium/${note.id}`, icon: k.icon, tint: 'var(--accent)' }); }),
+        ...r.marks.slice(0, 30).map(({ mark }) => cell({ title: `„${mark.text.slice(0, 120)}“`, sub: idx.doc.get(mark.documentId)?.title || '', href: `#/read/${mark.documentId}?loc=${encodeURIComponent(JSON.stringify(mark.loc))}`, icon: 'highlighter', tint: 'var(--warn)', wrap: true })),
+      ] }));
     }
-
-    if (!total) results.append(h('p', { class: 'search-none' }, 'Nothing in the catalogue matches. The full text is being searched below.'));
-    results.append(fullWrap);
-    runFullText(v, room);
+    const full = h('section', { class: 'group' });
+    results.append(full);
+    fullText(full, v, room, !(r.docs.length || r.notes.length || r.places.length || r.marks.length));
   }
 
-  async function runFullText(v, room) {
+  async function fullText(box, v, room, nothingElse) {
+    const head = h('h2', { class: 'group-head' }, h('span', null, 'Im Text der Bücher'));
     if (v.length < 3) {
-      fullWrap.append(h('h2', { class: 'sr-h' }, 'In the text of the volumes'), h('p', { class: 'muted' }, 'Type at least three letters to search inside the books.'));
+      box.replaceChildren(head, h('p', { class: 'group-foot' }, 'Ab drei Buchstaben wird auch im Text gesucht.'));
       return;
     }
     const ctrl = new AbortController();
     running = ctrl;
-    const status = h('p', { class: 'sr-status' }, 'Leafing through the volumes…');
-    const list = h('ol', { class: 'sr-passages' });
+    const status = h('p', { class: 'group-foot' }, 'Wird durchsucht …');
+    const list = h('ul', { class: 'list' });
     const cov = await fulltextCoverage();
-    fullWrap.replaceChildren(
-      h('h2', { class: 'sr-h' }, 'In the text of the volumes'),
-      status,
-      list,
-      cov.indexed < cov.readable ? h('p', { class: 'muted small' }, `${cov.indexed} of ${cov.readable} readable volumes are indexed on this device. The rest are indexed once their file is here.`) : null,
-    );
+    box.replaceChildren(head, list, status);
+    list.hidden = true;
     let n = 0;
-    const docIds = room ? idx.docsInDept.get(room) || new Set() : null;
     await searchFullText(v, {
-      docIds,
+      docIds: room ? idx.docsInDept.get(room) || new Set() : null,
       signal: ctrl.signal,
-      onProgress: (p, count) => {
-        if (!ctrl.signal.aborted) status.textContent = `Leafing through ${count} volumes… ${Math.round(p * 100)}%`;
-      },
+      onProgress: (p) => { if (!ctrl.signal.aborted) status.textContent = `Wird durchsucht … ${Math.round(p * 100)} %`; },
       onHit: (hit) => {
         if (ctrl.signal.aborted) return;
         n++;
-        list.append(
-          h(
-            'li',
-            null,
-            h(
-              'a',
-              { class: 'sr-passage', href: `#/read/${hit.doc.id}?loc=${encodeURIComponent(JSON.stringify(hit.loc))}` },
-              h('span', { class: 'sr-passage-src' }, `${hit.doc.title} · ${hit.part.label}`),
-              h('span', { class: 'sr-passage-text' }, hit.pre, h('mark', null, hit.hit), hit.post),
-            ),
-          ),
-        );
+        list.hidden = false;
+        list.append(h('li', null, h('a', { class: 'cell stack passage', href: `#/read/${hit.doc.id}?loc=${encodeURIComponent(JSON.stringify(hit.loc))}` }, h('span', { class: 'cell-sub' }, `${hit.doc.title} · ${hit.part.label}`), h('span', { class: 'passage-text' }, hit.pre, h('mark', null, hit.hit), hit.post))));
       },
     });
-    if (!ctrl.signal.aborted) status.textContent = n ? `${n} ${n === 1 ? 'passage' : 'passages'} found${n >= 80 ? ' (showing the first 80)' : ''}.` : 'No passage contains this phrase.';
+    if (ctrl.signal.aborted) return;
+    const coverage = cov.indexed < cov.readable ? ` ${cov.indexed} von ${cov.readable} Büchern sind auf diesem Gerät durchsuchbar.` : '';
+    status.textContent = n ? `${n} ${n === 1 ? 'Stelle' : 'Stellen'}${n >= 80 ? ' (die ersten 80)' : ''}.${coverage}` : `${nothingElse ? 'Nichts gefunden.' : 'Keine Stelle im Text.'}${coverage}`;
   }
 
   const page = h(
     'div',
-    { class: 'search-page' },
-    h(
-      'header',
-      { class: 'search-head' },
-      h('h1', { class: 'page-title' }, 'The Card Catalogue'),
-      h('div', { class: 'search-bar' }, h('span', { class: 'search-icon', html: icon('search') }), input, scopeSel),
-    ),
+    { class: 'page search-page' },
+    pageHeader({ title: 'Suche' }),
+    h('div', { class: 'search-row' }, searchField({ placeholder: 'Titel, Autor, Zitat, Gedanke …', value: q, fk: 'search-page', onInput: (v) => { q = v; go(); } }), scopeSel),
     results,
   );
-  draw(q, roomId);
+  draw(q.trim(), query.room || '');
   return page;
 }
-
-export const searchIcon = () => fromHTML(icon('search'));

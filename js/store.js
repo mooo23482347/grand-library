@@ -7,7 +7,7 @@ import { db, SYNCED, keyOf, pkOf } from './db.js';
 import { uid, slug, fold, sha256Hex } from './util.js';
 import { kindLabel } from './kinds.js';
 
-const MEM = ['departments', 'collections', 'documents', 'assignments', 'tags', 'documentTags', 'notes', 'highlights', 'bookmarks', 'progress'];
+const MEM = ['departments', 'collections', 'documents', 'assignments', 'tags', 'documentTags', 'notes', 'highlights', 'bookmarks', 'progress', 'prefs'];
 
 export const state = Object.fromEntries(MEM.map((t) => [t, []]));
 export const idx = { version: 0 };
@@ -82,6 +82,7 @@ function rebuild() {
   idx.tag = byKey(state.tags);
   idx.asg = byKey(state.assignments);
   idx.note = byKey(state.notes);
+  idx.pref = byKey(state.prefs);
   idx.hl = byKey(state.highlights);
   idx.progress = byKey(state.progress, 'documentId');
   idx.depts = [...state.departments].sort(byOrder);
@@ -158,7 +159,7 @@ export function colPath(colId) {
 
 export function placementLabel(a) {
   const d = idx.dept.get(a.departmentId);
-  const parts = [d?.name || 'Unknown room'];
+  const parts = [d?.name || 'Unbekanntes Regal'];
   if (a.collectionId) colPath(a.collectionId).forEach((c) => parts.push(c.name));
   return parts.join(' › ');
 }
@@ -204,11 +205,11 @@ export function scopeMatches(a, scope) {
 
 export function scopeLabel(scope) {
   const s = parseScope(scope);
-  if (!s) return 'every shelf';
-  if (s.kind === 'd') return idx.dept.get(s.id)?.name || 'this room';
-  if (s.kind === 'dd') return `${idx.dept.get(s.id)?.name || 'Room'} › General shelf`;
+  if (!s) return 'allen Regalen';
+  if (s.kind === 'd') return idx.dept.get(s.id)?.name || 'diesem Regal';
+  if (s.kind === 'dd') return `${idx.dept.get(s.id)?.name || 'Regal'} › Allgemein`;
   const c = idx.col.get(s.id);
-  return c ? placementLabel({ departmentId: c.departmentId, collectionId: c.id }) : 'this collection';
+  return c ? placementLabel({ departmentId: c.departmentId, collectionId: c.id }) : 'dieser Sammlung';
 }
 
 export function scopeTarget(scope) {
@@ -444,7 +445,7 @@ export async function restoreAssignments(docIds, snapshot) {
 export function newDocument(fields = {}) {
   return {
     id: `doc-${uid()}`,
-    title: 'Untitled',
+    title: 'Ohne Titel',
     author: '',
     kind: 'book',
     format: 'none',
@@ -482,7 +483,7 @@ export async function updateDocument(id, patch) {
   return put('documents', { ...d, ...patch });
 }
 
-/** Deletes volumes for good. Notes written about them stay in the Scriptorium (unless asked). */
+/** Deletes volumes for good. Notes written about them stay (unless asked). */
 export async function deleteDocuments(ids, { keepNotes = true } = {}) {
   const set = new Set(ids);
   const docs = ids.map((id) => idx.doc.get(id)).filter(Boolean);
@@ -584,7 +585,7 @@ export async function deleteNote(id) {
 export function noteTitle(n) {
   if (n.title) return n.title;
   const src = (n.quote || n.body || '').replace(/[#>*[\]]/g, '').trim();
-  return src ? src.slice(0, 70) + (src.length > 70 ? '…' : '') : 'Untitled note';
+  return src ? src.slice(0, 70) + (src.length > 70 ? '…' : '') : 'Ohne Titel';
 }
 
 export async function saveHighlight(fields) {
@@ -607,7 +608,9 @@ export async function deleteBookmark(id) {
 }
 
 export async function saveProgress(documentId, loc, percent) {
-  return put('progress', { documentId, loc, percent: Math.max(0, Math.min(1, percent || 0)), openedAt: Date.now() }, { silent: true });
+  const rec = await put('progress', { documentId, loc, percent: Math.max(0, Math.min(1, percent || 0)), openedAt: Date.now() }, { silent: true });
+  idx.progress?.set(documentId, rec); // silent: keep the index current without redrawing the library
+  return rec;
 }
 
 export async function getText(documentId) {
@@ -697,11 +700,11 @@ export async function setSetting(key, value) {
 // ---------------------------------------------------------------- sorting
 
 export const SORTS = {
-  author: { label: 'Author', fn: (a, b) => cmp(sortAuthor(a.author), sortAuthor(b.author)) || cmp(a.title, b.title) },
-  title: { label: 'Title', fn: (a, b) => cmp(stripArticle(a.title), stripArticle(b.title)) },
-  year: { label: 'Year', fn: (a, b) => (parseInt(a.year) || 9999) - (parseInt(b.year) || 9999) || cmp(a.title, b.title) },
-  kind: { label: 'Type', fn: (a, b) => cmp(kindLabel(a.kind), kindLabel(b.kind)) || cmp(sortAuthor(a.author), sortAuthor(b.author)) },
-  added: { label: 'Recently added', fn: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) },
+  author: { label: 'Autor', fn: (a, b) => cmp(sortAuthor(a.author), sortAuthor(b.author)) || cmp(a.title, b.title) },
+  title: { label: 'Titel', fn: (a, b) => cmp(stripArticle(a.title), stripArticle(b.title)) },
+  year: { label: 'Jahr', fn: (a, b) => (parseInt(a.year) || 9999) - (parseInt(b.year) || 9999) || cmp(a.title, b.title) },
+  kind: { label: 'Art', fn: (a, b) => cmp(kindLabel(a.kind), kindLabel(b.kind)) || cmp(sortAuthor(a.author), sortAuthor(b.author)) },
+  added: { label: 'Zuletzt hinzugefügt', fn: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) },
 };
 
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
@@ -717,4 +720,59 @@ function sortAuthor(a) {
 
 export function sortDocs(docs, key = 'author') {
   return [...docs].sort((SORTS[key] || SORTS.author).fn);
+}
+
+// ---------------------------------------------------------------- shelf order (drag & drop)
+
+export async function setDepartmentOrder(ids) {
+  const list = ids.map((id, n) => ({ ...idx.dept.get(id), order: n + 1 })).filter((d) => d.id);
+  await putMany('departments', list);
+}
+
+export async function setCollectionOrder(ids) {
+  const list = ids.map((id, n) => ({ ...idx.col.get(id), order: n + 1 })).filter((c) => c.id);
+  await putMany('collections', list);
+}
+
+// ---------------------------------------------------------------- synced preferences
+
+/** Preferences that follow the user to every device (stored in the synced `prefs` table). */
+export function getPref(id, fallback = null) {
+  return idx.pref?.get(id)?.data ?? fallback;
+}
+export async function setPref(id, data) {
+  await put('prefs', { id, data });
+}
+
+// ---------------------------------------------------------------- reading streak
+
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Remember that something was read today (once per day, synced). */
+export async function logReadingDay() {
+  const today = dayKey();
+  const act = getPref('activity', { days: [], finished: [] });
+  if (act.days.includes(today)) return;
+  const days = [...act.days, today].sort().slice(-400);
+  await setPref('activity', { ...act, days });
+}
+
+export async function logFinished(documentId) {
+  const act = getPref('activity', { days: [], finished: [] });
+  if ((act.finished || []).some((f) => f.id === documentId)) return false;
+  await setPref('activity', { ...act, finished: [...(act.finished || []), { id: documentId, at: Date.now() }].slice(-500) });
+  return true;
+}
+
+/** Days read in a row, ending today or yesterday. */
+export function readingStreak() {
+  const days = new Set(getPref('activity', { days: [] }).days || []);
+  const d = new Date();
+  if (!days.has(dayKey(d))) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (days.has(dayKey(d))) {
+    n++;
+    d.setDate(d.getDate() - 1);
+  }
+  return n;
 }
