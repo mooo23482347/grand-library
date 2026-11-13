@@ -608,7 +608,9 @@ export async function deleteBookmark(id) {
 }
 
 export async function saveProgress(documentId, loc, percent) {
-  return put('progress', { documentId, loc, percent: Math.max(0, Math.min(1, percent || 0)), openedAt: Date.now() }, { silent: true });
+  const rec = await put('progress', { documentId, loc, percent: Math.max(0, Math.min(1, percent || 0)), openedAt: Date.now() }, { silent: true });
+  idx.progress?.set(documentId, rec); // silent: keep the index current without redrawing the library
+  return rec;
 }
 
 export async function getText(documentId) {

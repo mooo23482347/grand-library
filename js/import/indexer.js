@@ -84,7 +84,13 @@ export async function extractParts(doc, onProgress) {
     }
     return parts;
   }
-  if (doc.format === 'pdf') return extractPdfText(blob, { onProgress });
+  if (doc.format === 'pdf') {
+    // PDFs are converted for reading first; the index then points into the reading text.
+    const { getReflow, reflowParts } = await import('../reader/reflow.js');
+    const rec = await getReflow(doc, { onProgress });
+    if (rec.status === 'ok') return reflowParts(rec);
+    return extractPdfText(blob, { onProgress });
+  }
   return null;
 }
 

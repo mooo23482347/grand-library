@@ -27,6 +27,7 @@ export class PdfEngine {
     this.sizes = new Map([[1, { w: this.base.width, h: this.base.height }]]);
     this.wrap = h('div', { class: 'pdf-pages' });
     scroll.replaceChildren(this.wrap);
+    scroll.addEventListener('scroll', () => this.reader.onMove(), { passive: true });
     this.toc = [];
     try {
       const outline = await this.pdf.getOutline();
@@ -41,7 +42,7 @@ export class PdfEngine {
           } catch {
             /* unresolved */
           }
-          if (page) this.toc.push({ label: String(it.title || '').trim() || `Page ${page}`, depth, loc: { page } });
+          if (page) this.toc.push({ label: String(it.title || '').trim() || `Seite ${page}`, depth, loc: { page } });
           if (it.items?.length) await walk(it.items, depth + 1);
         }
       };
@@ -202,15 +203,19 @@ export class PdfEngine {
     return this.toc;
   }
 
+  pageInfo() {
+    return { page: this.currentPage(), pages: this.count };
+  }
+
   chapterLabel() {
     const n = this.currentPage();
     let best = null;
     for (const t of this.toc) if (t.loc.page <= n && (!best || t.loc.page >= best.loc.page)) best = t;
-    return best ? `${best.label} · p. ${n}` : `Page ${n} of ${this.count}`;
+    return best ? `${best.label} · S. ${n}` : `Seite ${n} von ${this.count}`;
   }
 
   locLabel(loc) {
-    return `Page ${loc.page || 1}`;
+    return `Seite ${loc.page || 1}`;
   }
 
   async go(loc, { silent = false } = {}) {
