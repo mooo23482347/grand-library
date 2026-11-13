@@ -483,7 +483,7 @@ export async function updateDocument(id, patch) {
   return put('documents', { ...d, ...patch });
 }
 
-/** Deletes volumes for good. Notes written about them stay in the Scriptorium (unless asked). */
+/** Deletes volumes for good. Notes written about them stay (unless asked). */
 export async function deleteDocuments(ids, { keepNotes = true } = {}) {
   const set = new Set(ids);
   const docs = ids.map((id) => idx.doc.get(id)).filter(Boolean);

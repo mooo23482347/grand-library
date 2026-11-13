@@ -130,6 +130,7 @@ async function route() {
   }
   if (isReaderOpen()) closeReader();
   setReaderBack(location.hash);
+  updateTitle(r); // also when the view itself is reused (leaving the reader)
   const key = viewKey(r);
   if (key !== current.key || stale) {
     if (current.key) scrollMemory.set(current.key, window.scrollY);

@@ -90,7 +90,7 @@ function card(doc, scope) {
     'div',
     { class: 'card-top' },
     coverEl(doc, 'card-cover'),
-    h('h2', { class: 'card-title' }, doc.title || 'Ohne Titel'),
+    h('h2', { class: `card-title ${(doc.title || '').length > 70 ? 'long' : ''}` }, doc.title || 'Ohne Titel'),
     doc.author ? h('p', { class: 'card-author' }, doc.author) : null,
     h('p', { class: 'card-meta' }, [kindLabel(doc.kind), meta].filter(Boolean).join(' · ')),
     readable

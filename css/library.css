@@ -650,6 +650,10 @@
   max-width: 30ch;
   text-wrap: balance;
 }
+.card-title.long {
+  font-size: 19px;
+  max-width: 36ch;
+}
 .card-author {
   margin: 0;
   font-size: 17px;
